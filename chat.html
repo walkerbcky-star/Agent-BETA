@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Agent Beta Chat</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      margin: 0; padding: 0;
+      display: flex; flex-direction: column;
+      height: 100vh;
+    }
+    header {
+      background: #222; color: #fff;
+      padding: 1rem;
+      text-align: center;
+    }
+    #chat {
+      flex: 1; display: flex; flex-direction: column;
+      padding: 1rem;
+      overflow-y: auto;
+      background: #f9f9f9;
+    }
+    .message { margin: 0.5rem 0; }
+    .user { font-weight: bold; color: #333; }
+    .assistant { color: #555; }
+    #input-bar {
+      display: flex; padding: 1rem; background: #eee;
+    }
+    #input-bar input {
+      flex: 1; padding: 0.5rem; font-size: 1rem;
+    }
+    #input-bar button {
+      padding: 0.5rem 1rem; margin-left: 0.5rem;
+      font-size: 1rem; cursor: pointer;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Agent Beta</h1>
+    <p>Talk to your agent below</p>
+  </header>
+
+  <div id="chat"></div>
+
+  <div id="input-bar">
+    <input type="text" id="userInput" placeholder="Type your message..." />
+    <button onclick="sendMessage()">Send</button>
+  </div>
+
+  <script>
+    const chat = document.getElementById('chat');
+
+    function addMessage(role, text) {
+      const div = document.createElement('div');
+      div.classList.add('message', role);
+      div.innerHTML = `<span class="${role}">${role}:</span> ${text}`;
+      chat.appendChild(div);
+      chat.scrollTop = chat.scrollHeight;
+    }
+
+    async function sendMessage() {
+      const input = document.getElementById('userInput');
+      const text = input.value.trim();
+      if (!text) return;
+
+      addMessage('user', text);
+      input.value = '';
+
+      try {
+        const response = await fetch("http://localhost:3000/chat", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ message: text })
+        });
+
+        if (!response.ok) {
+          throw new Error("Server error: " + response.status);
+        }
+
+        const data = await response.json();
+        addMessage('assistant', data.reply);
+      } catch (err) {
+        addMessage('assistant', "Error: " + err.message);
+      }
+    }
+  </script>
+</body>
+</html>
