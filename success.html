@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Subscription Success</title>
+</head>
+<body>
+  <h1>Success!</h1>
+  <p>Fetching your API key…</p>
+
+  <script>
+    async function run() {
+      const params = new URLSearchParams(location.search);
+      const session_id = params.get("session_id");
+      if (!session_id) {
+        document.body.innerHTML = "<p>No session ID found.</p>";
+        return;
+      }
+
+      const r = await fetch("https://agent-beta.onrender.com/claim?session_id=" + encodeURIComponent(session_id));
+      const data = await r.json();
+
+      if (data.apiKey) {
+        localStorage.setItem("agent_api_key", data.apiKey);
+        document.body.innerHTML = "<p>Your subscription is active and your API key is saved. <a href='chat.html'>Go to chat</a></p>";
+      } else {
+        document.body.innerHTML = "<p>Error: " + (data.error || "Claim failed") + "</p>";
+      }
+    }
+    run();
+  </script>
+</body>
+</html>
