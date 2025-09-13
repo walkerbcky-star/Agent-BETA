@@ -11,7 +11,7 @@ dotenv.config();
 console.log("Loaded API Key:", process.env.OPENAI_API_KEY ? "✓ Found" : "✗ Missing");
 console.log("Stripe Secret Key:", process.env.STRIPE_SECRET_KEY ? "✓ Found" : "✗ Missing");
 console.log("Stripe Signing Secret:", process.env.STRIPE_SIGNING_SECRET ? "✓ Found" : "✗ Missing");
-console.log("Stripe Price ID:", process.env.STRIPE_PRICE_ID ? "✓ Found" : "✗ Missing");
+console.log("Stripe Price ID:", process.env.STRIPE_PRICE_ID ? process.env.STRIPE_PRICE_ID : "✗ Missing");
 
 const app = express();
 
