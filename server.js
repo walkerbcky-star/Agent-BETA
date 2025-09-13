@@ -135,8 +135,8 @@ app.post("/chat", async (req, res) => {
   }
 });
 
-// Create a checkout session for your subscription
-app.post("/create-checkout-session", async (req, res) => {
+// Create a checkout session for your subscription (GET so you can click it)
+app.get("/create-checkout-session", async (req, res) => {
   try {
     const session = await stripe.checkout.sessions.create({
       mode: "subscription",
