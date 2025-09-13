@@ -15,11 +15,12 @@ const __dirname = path.dirname(__filename);
 
 const app = express();
 
+// Stripe setup
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, {
   apiVersion: "2025-08-27.basil"
 });
 
-// Clean, inspectable env
+// Clean env vars
 const OPENAI_KEY = (process.env.OPENAI_API_KEY || "").trim();
 const STRIPE_SECRET = (process.env.STRIPE_SECRET_KEY || "").trim();
 const SIGNING_SECRET = (process.env.STRIPE_SIGNING_SECRET || "").trim();
@@ -30,7 +31,7 @@ console.log("Stripe Secret Key:", STRIPE_SECRET ? "✓ Found" : "✗ Missing");
 console.log("Stripe Signing Secret:", SIGNING_SECRET ? "✓ Found" : "✗ Missing");
 console.log("Stripe Price ID:", PRICE_ID ? JSON.stringify(PRICE_ID) : "✗ Missing");
 
-// CORS
+// Middleware
 app.use(cors({
   origin: "*",
   methods: ["GET", "POST", "OPTIONS"],
@@ -66,15 +67,15 @@ app.post("/stripe/webhook", express.raw({ type: "application/json" }), (req, res
   res.status(200).send("ok");
 });
 
-// JSON parser for everything else
+// JSON parser for non-webhook routes
 app.use(bodyParser.json());
 
-// Minimal static routes for your pages
+// Static routes
+app.get("/", (_req, res) => res.sendFile(path.join(__dirname, "subscribe.html")));
 app.get("/success", (_req, res) => res.sendFile(path.join(__dirname, "success.html")));
 app.get("/cancel", (_req, res) => res.sendFile(path.join(__dirname, "subscribe.html")));
-app.get("/", (_req, res) => res.send("alive"));
 
-// Chat endpoint (unchanged)
+// Chat endpoint
 const GLOBAL_RULES = `
 Light mode. Apply Quick-Scan rules. Draft in Becky’s voice: sharp, certain, alive. 
 Voice Prompt = inspiration not law. Short-first. No extras unless asked.
