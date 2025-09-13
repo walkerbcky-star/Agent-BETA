@@ -5,37 +5,46 @@ import fetch from "node-fetch"; // for Node <18
 import dotenv from "dotenv";
 import cors from "cors";
 import Stripe from "stripe";
+import path from "path";
+import { fileURLToPath } from "url";
 
 dotenv.config();
 
-console.log("Loaded API Key:", process.env.OPENAI_API_KEY ? "✓ Found" : "✗ Missing");
-console.log("Stripe Secret Key:", process.env.STRIPE_SECRET_KEY ? "✓ Found" : "✗ Missing");
-console.log("Stripe Signing Secret:", process.env.STRIPE_SIGNING_SECRET ? "✓ Found" : "✗ Missing");
-console.log("Stripe Price ID:", process.env.STRIPE_PRICE_ID ? process.env.STRIPE_PRICE_ID : "✗ Missing");
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const app = express();
 
-// Enable CORS with full pre-flight support
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, {
+  apiVersion: "2025-08-27.basil"
+});
+
+// Clean, inspectable env
+const OPENAI_KEY = (process.env.OPENAI_API_KEY || "").trim();
+const STRIPE_SECRET = (process.env.STRIPE_SECRET_KEY || "").trim();
+const SIGNING_SECRET = (process.env.STRIPE_SIGNING_SECRET || "").trim();
+const PRICE_ID = (process.env.STRIPE_PRICE_ID || "").trim();
+
+console.log("Loaded API Key:", OPENAI_KEY ? "✓ Found" : "✗ Missing");
+console.log("Stripe Secret Key:", STRIPE_SECRET ? "✓ Found" : "✗ Missing");
+console.log("Stripe Signing Secret:", SIGNING_SECRET ? "✓ Found" : "✗ Missing");
+// JSON.stringify shows hidden characters if any
+console.log("Stripe Price ID:", PRICE_ID ? JSON.stringify(PRICE_ID) : "✗ Missing");
+
+// CORS
 app.use(cors({
   origin: "*",
   methods: ["GET", "POST", "OPTIONS"],
   allowedHeaders: ["Content-Type", "Authorization"]
 }));
-app.options("/chat", cors()); // respond to preflight requests
+app.options("/chat", cors());
 
-// ============ STRIPE SETUP ============
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, {
-  apiVersion: "2025-08-27.basil"
-});
-const endpointSecret = process.env.STRIPE_SIGNING_SECRET;
-
-// Stripe needs raw body
+// Stripe webhook: must receive raw body
 app.post("/stripe/webhook", express.raw({ type: "application/json" }), (req, res) => {
   const sig = req.headers["stripe-signature"];
-
   let event;
   try {
-    event = stripe.webhooks.constructEvent(req.body, sig, endpointSecret);
+    event = stripe.webhooks.constructEvent(req.body, sig, SIGNING_SECRET);
     console.log("✅ Stripe event received:", event.type);
   } catch (err) {
     console.error("❌ Stripe signature verification failed:", err.message);
@@ -46,20 +55,27 @@ app.post("/stripe/webhook", express.raw({ type: "application/json" }), (req, res
     const paymentIntent = event.data.object;
     console.log("💰 Payment succeeded:", paymentIntent.id);
   }
-
   if (event.type === "customer.subscription.created") {
     const subscription = event.data.object;
     console.log("📦 Subscription created:", subscription.id);
   }
+  if (event.type === "invoice.payment_succeeded") {
+    const invoice = event.data.object;
+    console.log("🧾 Invoice paid:", invoice.id);
+  }
 
   res.status(200).send("ok");
 });
-// ======================================
 
-// Now add JSON parser for everything else
+// JSON parser for everything else
 app.use(bodyParser.json());
 
-// GLOBAL RULES
+// Minimal static routes for your pages
+app.get("/success", (_req, res) => res.sendFile(path.join(__dirname, "success.html")));
+app.get("/cancel", (_req, res) => res.sendFile(path.join(__dirname, "subscribe.html")));
+app.get("/", (_req, res) => res.send("alive"));
+
+// Your chat endpoint (unchanged logic)
 const GLOBAL_RULES = `
 Light mode. Apply Quick-Scan rules. Draft in Becky’s voice: sharp, certain, alive. 
 Voice Prompt = inspiration not law. Short-first. No extras unless asked.
@@ -94,22 +110,14 @@ Modes
 - Full Check (on request): Quick-Scan + Voice Prompt reference
 `;
 
-app.use((req, res, next) => {
-  console.log("Incoming request:", req.method, req.url);
-  next();
-});
-
-// Chat endpoint
 app.post("/chat", async (req, res) => {
   const { message } = req.body;
-  console.log("User message:", message);
-
   try {
     const response = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "Authorization": `Bearer ${process.env.OPENAI_API_KEY}`,
+        "Authorization": `Bearer ${OPENAI_KEY}`,
       },
       body: JSON.stringify({
         model: "gpt-4o-mini",
@@ -120,16 +128,11 @@ app.post("/chat", async (req, res) => {
       }),
     });
 
-    console.log("OpenAI status:", response.status);
     const data = await response.json();
-    console.log("OpenAI raw:", JSON.stringify(data, null, 2));
-
     if (!response.ok) {
       return res.status(response.status).json({ error: data.error?.message || "OpenAI error" });
     }
-
     const reply = data.choices?.[0]?.message?.content || "No reply";
-    console.log("AI reply:", reply);
     res.json({ reply });
   } catch (err) {
     console.error("Network/Fetch error:", err);
@@ -137,27 +140,54 @@ app.post("/chat", async (req, res) => {
   }
 });
 
-// Create a checkout session for your subscription (GET so you can click it)
-app.get("/create-checkout-session", async (req, res) => {
+// Create Checkout Session
+// 1) try with your Price ID (trimmed)
+// 2) if Stripe still says "no such price", fall back to inline price_data so you can proceed
+app.get("/create-checkout-session", async (_req, res) => {
   try {
+    // Prove the price exists with your key, and log details
+    const price = await stripe.prices.retrieve(PRICE_ID);
+    console.log("🔎 Retrieved price:", {
+      id: price.id,
+      active: price.active,
+      currency: price.currency,
+      recurring: price.recurring
+    });
+
     const session = await stripe.checkout.sessions.create({
       mode: "subscription",
-      payment_method_types: ["card"],
-      line_items: [
-        {
-          price: process.env.STRIPE_PRICE_ID,
-          quantity: 1,
-        },
-      ],
+      line_items: [{ price: PRICE_ID, quantity: 1 }],
       success_url: "https://agent-beta.onrender.com/success",
-      cancel_url: "https://agent-beta.onrender.com/cancel",
+      cancel_url: "https://agent-beta.onrender.com/cancel"
     });
 
     console.log("🛒 Checkout session created:", session.id);
-    res.json({ url: session.url });
+    return res.json({ url: session.url });
   } catch (err) {
-    console.error("❌ Error creating checkout session:", err.message);
-    res.status(500).json({ error: err.message });
+    console.error("Price path failed:", err.message);
+
+    // Fallback: inline price for test so you can move forward now
+    try {
+      const session = await stripe.checkout.sessions.create({
+        mode: "subscription",
+        line_items: [{
+          price_data: {
+            currency: "gbp",
+            recurring: { interval: "month" },
+            unit_amount: 500, // £5.00
+            product_data: { name: "Agent Test Subscription (inline fallback)" }
+          },
+          quantity: 1
+        }],
+        success_url: "https://agent-beta.onrender.com/success",
+        cancel_url: "https://agent-beta.onrender.com/cancel"
+      });
+      console.log("🛒 Fallback session created:", session.id);
+      return res.json({ url: session.url, note: "Using inline fallback price" });
+    } catch (fallbackErr) {
+      console.error("❌ Fallback also failed:", fallbackErr.message);
+      return res.status(500).json({ error: fallbackErr.message });
+    }
   }
 });
 
