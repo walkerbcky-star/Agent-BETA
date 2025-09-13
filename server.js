@@ -18,14 +18,10 @@ const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, {
   apiVersion: "2025-08-27.basil"
 });
 
-// Clean env vars
 const OPENAI_KEY = (process.env.OPENAI_API_KEY || "").trim();
 const SIGNING_SECRET = (process.env.STRIPE_SIGNING_SECRET || "").trim();
 const PRICE_ID = (process.env.STRIPE_PRICE_ID || "").trim();
 
-console.log("Stripe Price ID:", PRICE_ID);
-
-// Middleware
 app.use(cors());
 app.use(bodyParser.json());
 
@@ -47,10 +43,6 @@ app.get("/", (_req, res) => res.sendFile(path.join(__dirname, "subscribe.html"))
 app.get("/success", (_req, res) => res.sendFile(path.join(__dirname, "success.html")));
 app.get("/cancel", (_req, res) => res.sendFile(path.join(__dirname, "subscribe.html")));
 
-// Chat endpoint (unchanged)
-const GLOBAL_RULES = `...`;
-app.post("/chat", async (req, res) => { /* unchanged */ });
-
 // Checkout session
 app.get("/create-checkout-session", async (_req, res) => {
   try {
@@ -68,7 +60,7 @@ app.get("/create-checkout-session", async (_req, res) => {
   }
 });
 
-// New: fetch session details for success.html
+// Success lookup
 app.get("/session-status", async (req, res) => {
   const sessionId = req.query.session_id;
   try {
@@ -77,7 +69,35 @@ app.get("/session-status", async (req, res) => {
     });
     res.json(session);
   } catch (err) {
-    console.error("❌ Error retrieving session:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// NEW: check subscription by email
+app.get("/check-subscription", async (req, res) => {
+  const email = req.query.email;
+  if (!email) return res.status(400).json({ error: "Email required" });
+
+  try {
+    const customers = await stripe.customers.list({ email, limit: 1 });
+    if (!customers.data.length) {
+      return res.json({ active: false });
+    }
+
+    const customer = customers.data[0];
+    const subs = await stripe.subscriptions.list({
+      customer: customer.id,
+      status: "all",
+      limit: 1
+    });
+
+    if (subs.data.length && subs.data[0].status === "active") {
+      return res.json({ active: true, subscriptionId: subs.data[0].id });
+    }
+
+    return res.json({ active: false });
+  } catch (err) {
+    console.error("❌ Error checking subscription:", err.message);
     res.status(500).json({ error: err.message });
   }
 });
