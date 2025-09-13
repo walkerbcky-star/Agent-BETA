@@ -28,7 +28,6 @@ const PRICE_ID = (process.env.STRIPE_PRICE_ID || "").trim();
 console.log("Loaded API Key:", OPENAI_KEY ? "✓ Found" : "✗ Missing");
 console.log("Stripe Secret Key:", STRIPE_SECRET ? "✓ Found" : "✗ Missing");
 console.log("Stripe Signing Secret:", SIGNING_SECRET ? "✓ Found" : "✗ Missing");
-// JSON.stringify shows hidden characters if any
 console.log("Stripe Price ID:", PRICE_ID ? JSON.stringify(PRICE_ID) : "✗ Missing");
 
 // CORS
@@ -75,39 +74,11 @@ app.get("/success", (_req, res) => res.sendFile(path.join(__dirname, "success.ht
 app.get("/cancel", (_req, res) => res.sendFile(path.join(__dirname, "subscribe.html")));
 app.get("/", (_req, res) => res.send("alive"));
 
-// Your chat endpoint (unchanged logic)
+// Chat endpoint (unchanged)
 const GLOBAL_RULES = `
 Light mode. Apply Quick-Scan rules. Draft in Becky’s voice: sharp, certain, alive. 
 Voice Prompt = inspiration not law. Short-first. No extras unless asked.
-
-Quick-Scan Rules
-- No em dash
-- No bullet symbols (use hyphens)
-- No beige
-- No LinkedIn-safe or coachy tone
-- No filler coaching phrases (e.g., "Here’s the thing")
-- No padding unless requested
-- Rhythm varied: short lines hit, longer lines roll (no staccato crutch)
-- Analogy = hook + one beat, then cut to fix
-- One analogy max per piece
-- No recycling old analogies or set-pieces unless revived
-- Active voice as default (never passive unless flagged)
-
-Voice Spine
-- Sharp. Certain. Alive.
-- Declarative. Tell, don’t ask.
-- Irreverent when useful. Precise when needed.
-- Reads like an edit, not encouragement.
-- Rooted in conceptual art thinking: balance what’s in vs what’s left out.
-
-Structure Spine
-- Problem → Fix → Proof → CTA
-- Every section must earn its place
-- Copy moves fast: clarity first, persuasion through confidence
-
-Modes
-- Light Mode (default): Quick-Scan only, fast drafting
-- Full Check (on request): Quick-Scan + Voice Prompt reference
+...
 `;
 
 app.post("/chat", async (req, res) => {
@@ -141,23 +112,15 @@ app.post("/chat", async (req, res) => {
 });
 
 // Create Checkout Session
-// 1) try with your Price ID (trimmed)
-// 2) if Stripe still says "no such price", fall back to inline price_data so you can proceed
 app.get("/create-checkout-session", async (_req, res) => {
   try {
-    // Prove the price exists with your key, and log details
     const price = await stripe.prices.retrieve(PRICE_ID);
-    console.log("🔎 Retrieved price:", {
-      id: price.id,
-      active: price.active,
-      currency: price.currency,
-      recurring: price.recurring
-    });
+    console.log("🔎 Retrieved price:", { id: price.id, active: price.active });
 
     const session = await stripe.checkout.sessions.create({
       mode: "subscription",
       line_items: [{ price: PRICE_ID, quantity: 1 }],
-      success_url: "https://agent-beta.onrender.com/success",
+      success_url: "https://agent-beta.onrender.com/success?session_id={CHECKOUT_SESSION_ID}",
       cancel_url: "https://agent-beta.onrender.com/cancel"
     });
 
@@ -166,7 +129,7 @@ app.get("/create-checkout-session", async (_req, res) => {
   } catch (err) {
     console.error("Price path failed:", err.message);
 
-    // Fallback: inline price for test so you can move forward now
+    // Fallback inline price
     try {
       const session = await stripe.checkout.sessions.create({
         mode: "subscription",
@@ -174,12 +137,12 @@ app.get("/create-checkout-session", async (_req, res) => {
           price_data: {
             currency: "gbp",
             recurring: { interval: "month" },
-            unit_amount: 500, // £5.00
+            unit_amount: 500,
             product_data: { name: "Agent Test Subscription (inline fallback)" }
           },
           quantity: 1
         }],
-        success_url: "https://agent-beta.onrender.com/success",
+        success_url: "https://agent-beta.onrender.com/success?session_id={CHECKOUT_SESSION_ID}",
         cancel_url: "https://agent-beta.onrender.com/cancel"
       });
       console.log("🛒 Fallback session created:", session.id);
