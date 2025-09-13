@@ -2,32 +2,60 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Subscribe to Agent</title>
+  <title>Subscribe</title>
+  <style>
+    body {
+      font-family: sans-serif;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      height: 100vh;
+      background: #f8f9fa;
+    }
+    .box {
+      background: #fff;
+      padding: 2rem;
+      border-radius: 12px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+      text-align: center;
+    }
+    button {
+      background: #635bff;
+      border: none;
+      padding: 0.75rem 1.5rem;
+      color: white;
+      font-size: 1rem;
+      font-weight: bold;
+      border-radius: 8px;
+      cursor: pointer;
+    }
+    button:hover {
+      background: #5146d6;
+    }
+  </style>
 </head>
 <body>
-  <h1>Subscribe to Agent</h1>
-  <p>Enter your email to start your subscription:</p>
-  <input id="email" placeholder="you@example.com" />
-  <button onclick="go()">Subscribe</button>
+  <div class="box">
+    <h1>Subscribe to Agent Beta</h1>
+    <p>Click below to start your subscription.</p>
+    <button id="subscribeBtn">Start Subscription</button>
+  </div>
 
   <script>
-    async function go() {
-      const email = document.getElementById('email').value.trim();
-      if (!email) return alert("Please enter your email");
-
-      const r = await fetch("https://agent-beta.onrender.com/subscribe", {
-        method: "POST",
-        headers: {"Content-Type":"application/json"},
-        body: JSON.stringify({ email })
-      });
-
-      const data = await r.json();
-      if (data.url) {
-        location.href = data.url;
-      } else {
-        alert(data.error || "Failed to start subscription");
+    document.getElementById("subscribeBtn").addEventListener("click", async () => {
+      try {
+        const response = await fetch("/create-checkout-session");
+        const data = await response.json();
+        if (data.url) {
+          window.location.href = data.url; // Redirect to Stripe Checkout
+        } else {
+          alert("Error creating checkout session");
+        }
+      } catch (err) {
+        console.error("Error:", err);
+        alert("Something went wrong");
       }
-    }
+    });
   </script>
 </body>
 </html>
