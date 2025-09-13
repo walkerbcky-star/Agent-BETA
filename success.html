@@ -2,32 +2,45 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Subscription Success</title>
+  <title>Payment Successful</title>
+  <style>
+    body {
+      font-family: sans-serif;
+      padding: 2rem;
+      text-align: center;
+    }
+    .container {
+      max-width: 500px;
+      margin: auto;
+    }
+    .session-id {
+      margin-top: 1rem;
+      font-weight: bold;
+      color: #2d6a4f;
+      word-wrap: break-word;
+    }
+  </style>
 </head>
 <body>
-  <h1>Success!</h1>
-  <p>Fetching your API key…</p>
+  <div class="container">
+    <h1>✅ Payment Successful</h1>
+    <p>Thank you for subscribing. Your checkout session has completed.</p>
+    <p id="sessionText">Loading session ID...</p>
+  </div>
 
   <script>
-    async function run() {
-      const params = new URLSearchParams(location.search);
-      const session_id = params.get("session_id");
-      if (!session_id) {
-        document.body.innerHTML = "<p>No session ID found.</p>";
-        return;
-      }
+    // Extract session_id from query string
+    const params = new URLSearchParams(window.location.search);
+    const sessionId = params.get("session_id");
 
-      const r = await fetch("https://agent-beta.onrender.com/claim?session_id=" + encodeURIComponent(session_id));
-      const data = await r.json();
-
-      if (data.apiKey) {
-        localStorage.setItem("agent_api_key", data.apiKey);
-        document.body.innerHTML = "<p>Your subscription is active and your API key is saved. <a href='chat.html'>Go to chat</a></p>";
-      } else {
-        document.body.innerHTML = "<p>Error: " + (data.error || "Claim failed") + "</p>";
-      }
+    const textElement = document.getElementById("sessionText");
+    if (sessionId) {
+      textElement.textContent = "Session ID: " + sessionId;
+      textElement.className = "session-id";
+    } else {
+      textElement.textContent = "No session ID found in URL.";
+      textElement.style.color = "red";
     }
-    run();
   </script>
 </body>
 </html>
