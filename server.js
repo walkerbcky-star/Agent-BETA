@@ -11,9 +11,6 @@ import pkg from "pg";
 
 dotenv.config();
 
-console.log("🔎 Stripe Price ID loaded:", process.env.STRIPE_PRICE_ID);
-
-
 const { Pool } = pkg;
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -21,9 +18,7 @@ const __dirname = path.dirname(__filename);
 const app = express();
 
 // ===== STRIPE SETUP =====
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
-
-});
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY); // removed hardcoded apiVersion
 const SIGNING_SECRET = (process.env.STRIPE_SIGNING_SECRET || "").trim();
 const PRICE_ID = (process.env.STRIPE_PRICE_ID || "").trim();
 
@@ -139,8 +134,7 @@ app.get("/cancel", (_req, res) => res.sendFile(path.join(__dirname, "subscribe.h
 // ===== CHECKOUT SESSION =====
 app.get("/create-checkout-session", async (_req, res) => {
   try {
-console.log("🔎 Using Price ID for checkout:", PRICE_ID);
-
+    console.log("🔎 Using Price ID for checkout:", PRICE_ID);
     const session = await stripe.checkout.sessions.create({
       mode: "subscription",
       line_items: [{ price: PRICE_ID, quantity: 1 }],
