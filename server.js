@@ -82,7 +82,6 @@ Modes
 `;
 
 // ===== STRIPE WEBHOOK =====
-// Important: raw body parser must come *before* bodyParser.json()
 app.post(
   "/stripe/webhook",
   express.raw({ type: "application/json" }),
@@ -132,7 +131,6 @@ app.post(
 );
 
 // ===== MIDDLEWARE =====
-// Apply JSON parser *after* webhook route to avoid conflicts
 app.use(cors());
 app.use(bodyParser.json());
 
@@ -146,12 +144,13 @@ app.get("/create-checkout-session", async (_req, res) => {
   try {
     console.log("🔎 Using Price ID for checkout:", PRICE_ID);
     const session = await stripe.checkout.sessions.create({
+      customer_email: "tester@example.com", // Added to satisfy Accounts V2
       mode: "subscription",
       line_items: [{ price: PRICE_ID, quantity: 1 }],
       success_url: "https://agent-beta.onrender.com/success?session_id={CHECKOUT_SESSION_ID}",
       cancel_url: "https://agent-beta.onrender.com/cancel",
     });
-    console.log("🛒 Checkout session created:", session.id);
+    console.log("🛒 Checkout session created:", session.id, session.url);
     return res.json({ url: session.url });
   } catch (err) {
     console.error("❌ Error creating session:", err.message);
@@ -199,21 +198,3 @@ app.post("/chat", async (req, res) => {
         messages: [
           { role: "system", content: GLOBAL_RULES },
           { role: "user", content: message },
-        ],
-      }),
-    });
-
-    const data = await response.json();
-    if (!response.ok) {
-      return res.status(response.status).json({ error: data.error?.message || "OpenAI error" });
-    }
-    const reply = data.choices?.[0]?.message?.content || "No reply";
-    res.json({ reply });
-  } catch (err) {
-    console.error("Network/Fetch error:", err);
-    res.status(500).json({ error: "Network error calling OpenAI" });
-  }
-});
-
-// ===== START SERVER =====
-app.listen(3000, () => console.log("Server running on http://localhost:3000"));
