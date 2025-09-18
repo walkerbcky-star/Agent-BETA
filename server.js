@@ -22,8 +22,9 @@ const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, {
   apiVersion: "2025-06-30.basil",
 });
 
+// Hard-coded for testing. Replace with env var later.
+const PRICE_ID = "price_1S8go1CBPtCaSboQpciy2HQK";
 const SIGNING_SECRET = (process.env.STRIPE_SIGNING_SECRET || "").trim();
-const PRICE_ID = (process.env.STRIPE_PRICE_ID || "").trim();
 
 // ===== POSTGRES SETUP =====
 const pool = new Pool({
@@ -44,10 +45,6 @@ const pool = new Pool({
 
 // ===== OPENAI SETUP =====
 const OPENAI_KEY = (process.env.OPENAI_API_KEY || "").trim();
-
-// ===== MIDDLEWARE =====
-app.use(cors());
-app.use(bodyParser.json());
 
 // ===== VOICE RULES =====
 const GLOBAL_RULES = `
@@ -85,49 +82,59 @@ Modes
 `;
 
 // ===== STRIPE WEBHOOK =====
-app.post("/stripe/webhook", express.raw({ type: "application/json" }), async (req, res) => {
-  const sig = req.headers["stripe-signature"];
-  try {
-    const event = stripe.webhooks.constructEvent(req.body, sig, SIGNING_SECRET);
-    console.log("✅ Stripe event received:", event.type);
+// Important: raw body parser must come *before* bodyParser.json()
+app.post(
+  "/stripe/webhook",
+  express.raw({ type: "application/json" }),
+  async (req, res) => {
+    const sig = req.headers["stripe-signature"];
+    try {
+      const event = stripe.webhooks.constructEvent(req.body, sig, SIGNING_SECRET);
+      console.log("✅ Stripe event received:", event.type);
 
-    if (event.type === "checkout.session.completed") {
-      const session = event.data.object;
-      const email = session.customer_details.email;
-      const customerId = session.customer;
+      if (event.type === "checkout.session.completed") {
+        const session = event.data.object;
+        const email = session.customer_details.email;
+        const customerId = session.customer;
 
-      console.log(`💡 Checkout completed for ${email}`);
+        console.log(`💡 Checkout completed for ${email}`);
 
-      // Insert or update user in DB
-      await pool.query(
-        `INSERT INTO users (email, stripe_customer_id, is_subscriber)
-         VALUES ($1, $2, true)
-         ON CONFLICT (email)
-         DO UPDATE SET stripe_customer_id = $2, is_subscriber = true, updated_at = NOW()`,
-        [email, customerId]
-      );
-      console.log("📦 User updated in DB");
+        // Insert or update user in DB
+        await pool.query(
+          `INSERT INTO users (email, stripe_customer_id, is_subscriber)
+           VALUES ($1, $2, true)
+           ON CONFLICT (email)
+           DO UPDATE SET stripe_customer_id = $2, is_subscriber = true, updated_at = NOW()`,
+          [email, customerId]
+        );
+        console.log("📦 User updated in DB");
+      }
+
+      if (event.type === "customer.subscription.updated") {
+        const subscription = event.data.object;
+        const customerId = subscription.customer;
+        const status = subscription.status === "active";
+
+        await pool.query(
+          `UPDATE users SET is_subscriber = $1, stripe_subscription_id = $2, updated_at = NOW()
+           WHERE stripe_customer_id = $3`,
+          [status, subscription.id, customerId]
+        );
+        console.log(`🔄 Subscription status updated: ${subscription.id} (${status})`);
+      }
+
+      res.status(200).send("ok");
+    } catch (err) {
+      console.error("❌ Webhook error:", err.message);
+      res.status(400).send(`Webhook Error: ${err.message}`);
     }
-
-    if (event.type === "customer.subscription.updated") {
-      const subscription = event.data.object;
-      const customerId = subscription.customer;
-      const status = subscription.status === "active";
-
-      await pool.query(
-        `UPDATE users SET is_subscriber = $1, stripe_subscription_id = $2, updated_at = NOW()
-         WHERE stripe_customer_id = $3`,
-        [status, subscription.id, customerId]
-      );
-      console.log(`🔄 Subscription status updated: ${subscription.id} (${status})`);
-    }
-
-    res.status(200).send("ok");
-  } catch (err) {
-    console.error("❌ Webhook error:", err.message);
-    res.status(400).send(`Webhook Error: ${err.message}`);
   }
-});
+);
+
+// ===== MIDDLEWARE =====
+// Apply JSON parser *after* webhook route to avoid conflicts
+app.use(cors());
+app.use(bodyParser.json());
 
 // ===== STATIC PAGES =====
 app.get("/", (_req, res) => res.sendFile(path.join(__dirname, "subscribe.html")));

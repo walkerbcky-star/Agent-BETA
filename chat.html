@@ -69,10 +69,19 @@
       addMessage('user', text);
       input.value = '';
 
+      const apiKey = localStorage.getItem("agent_api_key");
+      if (!apiKey) {
+        addMessage('assistant', "No API key found. Please subscribe first.");
+        return;
+      }
+
       try {
-        const response = await fetch("http://localhost:3000/chat", {
+        const response = await fetch("https://agent-beta.onrender.com", {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: { 
+            "Content-Type": "application/json",
+            "X-API-Key": apiKey
+          },
           body: JSON.stringify({ message: text })
         });
 
@@ -81,7 +90,7 @@
         }
 
         const data = await response.json();
-        addMessage('assistant', data.reply);
+        addMessage('assistant', data.reply || (data.error ? "Error: " + data.error : "No reply"));
       } catch (err) {
         addMessage('assistant', "Error: " + err.message);
       }
