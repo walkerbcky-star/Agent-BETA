@@ -139,6 +139,8 @@ app.get("/cancel", (_req, res) => res.sendFile(path.join(__dirname, "subscribe.h
 // ===== CHECKOUT SESSION =====
 app.get("/create-checkout-session", async (_req, res) => {
   try {
+console.log("🔎 Using Price ID for checkout:", PRICE_ID);
+
     const session = await stripe.checkout.sessions.create({
       mode: "subscription",
       line_items: [{ price: PRICE_ID, quantity: 1 }],
