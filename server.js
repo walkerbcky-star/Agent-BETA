@@ -11,6 +11,9 @@ import pkg from "pg";
 
 dotenv.config();
 
+console.log("🔎 Stripe Price ID loaded:", process.env.STRIPE_PRICE_ID);
+
+
 const { Pool } = pkg;
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
