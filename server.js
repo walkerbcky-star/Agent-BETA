@@ -18,7 +18,10 @@ const __dirname = path.dirname(__filename);
 const app = express();
 
 // ===== STRIPE SETUP =====
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY); // removed hardcoded apiVersion
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, {
+  apiVersion: "2025-08-27.basil",
+});
+
 const SIGNING_SECRET = (process.env.STRIPE_SIGNING_SECRET || "").trim();
 const PRICE_ID = (process.env.STRIPE_PRICE_ID || "").trim();
 
