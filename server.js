@@ -172,6 +172,18 @@ app.get("/session-status", async (req, res) => {
   }
 });
 
+// ===== DEBUG PRICES =====
+app.get("/debug-prices", async (_req, res) => {
+  try {
+    const prices = await stripe.prices.list({ limit: 10 });
+    console.log("📋 Available prices:", prices.data.map(p => p.id));
+    res.json(prices.data);
+  } catch (err) {
+    console.error("❌ Error listing prices:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ===== CHAT ENDPOINT =====
 app.post("/chat", async (req, res) => {
   const { message } = req.body;
