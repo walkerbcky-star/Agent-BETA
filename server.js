@@ -51,7 +51,6 @@ Light mode. Apply Quick-Scan rules. Draft in Becky’s voice: sharp, certain, al
 `;
 
 // ===== STRIPE WEBHOOK =====
-// Must use raw body parser with catch-all type
 app.post(
   "/stripe/webhook",
   express.raw({ type: "*/*" }),
@@ -60,7 +59,12 @@ app.post(
     console.log("🔐 Verifying webhook signature using:", SIGNING_SECRET);
 
     try {
-      const event = stripe.webhooks.constructEvent(req.body, sig, SIGNING_SECRET);
+      // Convert Buffer -> string so signature check works
+      const event = stripe.webhooks.constructEvent(
+        req.body.toString("utf8"),
+        sig,
+        SIGNING_SECRET
+      );
       console.log("✅ Stripe event received:", event.type);
 
       if (event.type === "checkout.session.completed") {
