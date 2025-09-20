@@ -21,7 +21,7 @@ const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, {
   apiVersion: "2025-06-30.basil",
 });
 
-const PRICE_ID = "price_1S9OD8C0Z5UDd7Ye4p6SbZsH"; // sandbox test price
+const PRICE_ID = "price_1S9OD8C0Z5UDd7Ye4p6SbZsH"; // hard-coded for now
 const SIGNING_SECRET = (process.env.STRIPE_SIGNING_SECRET || "").trim();
 
 // ===== POSTGRES SETUP =====
@@ -30,7 +30,6 @@ const pool = new Pool({
   ssl: { rejectUnauthorized: false },
 });
 
-// Test DB connection
 (async () => {
   try {
     const client = await pool.connect();
@@ -47,29 +46,32 @@ const OPENAI_KEY = (process.env.OPENAI_API_KEY || "").trim();
 // ===== VOICE RULES =====
 const GLOBAL_RULES = `
 Light mode. Apply Quick-Scan rules. Draft in Becky’s voice: sharp, certain, alive.
-...
+No em dash. No beige. Short-first. One analogy max.
+Problem → Fix → Proof → CTA.
 `;
 
 // ===== STRIPE WEBHOOK =====
+// This MUST come before any app.use(bodyParser.json()) or app.use(express.json())
 app.post(
   "/stripe/webhook",
   express.raw({ type: "*/*" }),
   async (req, res) => {
     const sig = req.headers["stripe-signature"];
-    console.log("🔐 Verifying webhook signature using:", SIGNING_SECRET);
+    console.log("🔐 Verifying webhook signature...");
 
     try {
-      // Convert Buffer -> string so signature check works
+      // Use raw body Buffer directly
       const event = stripe.webhooks.constructEvent(
-        req.body.toString("utf8"),
+        req.body,
         sig,
         SIGNING_SECRET
       );
-      console.log("✅ Stripe event received:", event.type);
+
+      console.log(`✅ Stripe event received: ${event.type}`);
 
       if (event.type === "checkout.session.completed") {
         const session = event.data.object;
-        const email = session.customer_details.email;
+        const email = session.customer_details?.email;
         const customerId = session.customer;
 
         console.log(`💡 Checkout completed for ${email} (customer ${customerId})`);
@@ -82,6 +84,7 @@ app.post(
            RETURNING *`,
           [email, customerId]
         );
+
         console.log("📦 DB insert/update result:", result.rows[0]);
       }
 
@@ -90,26 +93,28 @@ app.post(
         const customerId = subscription.customer;
         const status = subscription.status === "active";
 
-        const result = await pool.query(
-          `UPDATE users SET is_subscriber = $1, stripe_subscription_id = $2, updated_at = NOW()
-           WHERE stripe_customer_id = $3
-           RETURNING *`,
+        await pool.query(
+          `UPDATE users
+           SET is_subscriber = $1,
+               stripe_subscription_id = $2,
+               updated_at = NOW()
+           WHERE stripe_customer_id = $3`,
           [status, subscription.id, customerId]
         );
-        console.log(`🔄 Subscription status updated:`, result.rows[0]);
+        console.log(`🔄 Subscription status updated: ${subscription.id} (${status})`);
       }
 
       res.status(200).send("ok");
     } catch (err) {
       console.error("❌ Webhook signature error:", err.message);
-      return res.status(400).send(`Webhook Error: ${err.message}`);
+      res.status(400).send(`Webhook Error: ${err.message}`);
     }
   }
 );
 
-// ===== NORMAL MIDDLEWARE (after webhook) =====
-app.use(express.json());
+// ===== MIDDLEWARE =====
 app.use(cors());
+app.use(express.json());
 
 // ===== STATIC PAGES =====
 app.get("/", (_req, res) => res.sendFile(path.join(__dirname, "subscribe.html")));
@@ -121,7 +126,7 @@ app.get("/create-checkout-session", async (_req, res) => {
   try {
     console.log("🔎 Using Price ID for checkout:", PRICE_ID);
     const session = await stripe.checkout.sessions.create({
-      customer_email: "tester@example.com", // sandbox test email
+      customer_email: "tester@example.com", // required for Accounts V2 test
       mode: "subscription",
       line_items: [{ price: PRICE_ID, quantity: 1 }],
       success_url: "https://agent-beta.onrender.com/success?session_id={CHECKOUT_SESSION_ID}",
@@ -135,7 +140,7 @@ app.get("/create-checkout-session", async (_req, res) => {
   }
 });
 
-// ===== SUCCESS LOOKUP =====
+// ===== SESSION LOOKUP =====
 app.get("/session-status", async (req, res) => {
   const sessionId = req.query.session_id;
   try {
@@ -152,7 +157,7 @@ app.get("/session-status", async (req, res) => {
 app.get("/debug-prices", async (_req, res) => {
   try {
     const prices = await stripe.prices.list({ limit: 10 });
-    console.log("📋 Available prices:", prices.data.map(p => p.id));
+    console.log("📋 Available prices:", prices.data.map((p) => p.id));
     res.json(prices.data);
   } catch (err) {
     console.error("❌ Error listing prices:", err.message);
@@ -168,7 +173,7 @@ app.post("/chat", async (req, res) => {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "Authorization": `Bearer ${OPENAI_KEY}`,
+        Authorization: `Bearer ${OPENAI_KEY}`,
       },
       body: JSON.stringify({
         model: "gpt-4o-mini",
@@ -186,7 +191,7 @@ app.post("/chat", async (req, res) => {
     const reply = data.choices?.[0]?.message?.content || "No reply";
     res.json({ reply });
   } catch (err) {
-    console.error("Network/Fetch error:", err);
+    console.error("❌ Network/Fetch error:", err);
     res.status(500).json({ error: "Network error calling OpenAI" });
   }
 });
