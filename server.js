@@ -1,6 +1,5 @@
 // server.js
 import express from "express";
-import bodyParser from "body-parser";
 import fetch from "node-fetch";
 import dotenv from "dotenv";
 import cors from "cors";
@@ -22,7 +21,7 @@ const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, {
   apiVersion: "2025-06-30.basil",
 });
 
-const PRICE_ID = "price_1S9OD8C0Z5UDd7Ye4p6SbZsH"; // hard-coded for sandbox test
+const PRICE_ID = "price_1S9OD8C0Z5UDd7Ye4p6SbZsH"; // sandbox test price
 const SIGNING_SECRET = (process.env.STRIPE_SIGNING_SECRET || "").trim();
 
 // ===== POSTGRES SETUP =====
@@ -47,14 +46,15 @@ const OPENAI_KEY = (process.env.OPENAI_API_KEY || "").trim();
 
 // ===== VOICE RULES =====
 const GLOBAL_RULES = `
-Light mode. Apply Quick-Scan rules. Draft in Becky’s voice: sharp, certain, alive. 
+Light mode. Apply Quick-Scan rules. Draft in Becky’s voice: sharp, certain, alive.
 ...
 `;
 
-// ===== STRIPE WEBHOOK (raw body ONLY here) =====
+// ===== STRIPE WEBHOOK =====
+// Must use raw body parser with catch-all type
 app.post(
   "/stripe/webhook",
-  express.raw({ type: "application/json" }),
+  express.raw({ type: "*/*" }),
   async (req, res) => {
     const sig = req.headers["stripe-signature"];
     console.log("🔐 Verifying webhook signature using:", SIGNING_SECRET);
@@ -103,14 +103,8 @@ app.post(
   }
 );
 
-// ===== MIDDLEWARE for all other routes =====
-app.use((req, res, next) => {
-  if (req.originalUrl === "/stripe/webhook") {
-    next(); // skip JSON parser for Stripe webhooks
-  } else {
-    bodyParser.json()(req, res, next);
-  }
-});
+// ===== NORMAL MIDDLEWARE (after webhook) =====
+app.use(express.json());
 app.use(cors());
 
 // ===== STATIC PAGES =====
