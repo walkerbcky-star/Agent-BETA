@@ -22,12 +22,7 @@ const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, {
   apiVersion: "2025-06-30.basil",
 });
 
-// Sandbox price ID (hard-coded for now)
-const PRICE_ID = "price_1S9OD8C0Z5UDd7Ye4p6SbZsH";
-
-// IMPORTANT: 
-// - If testing with CLI, use the `whsec_...` shown when you run `stripe listen`.
-// - If testing real sandbox checkout, use the signing secret from the sandbox dashboard webhook.
+const PRICE_ID = "price_1S9OD8C0Z5UDd7Ye4p6SbZsH"; // hard-coded for now
 const SIGNING_SECRET = (process.env.STRIPE_SIGNING_SECRET || "").trim();
 
 // ===== POSTGRES SETUP =====
@@ -36,6 +31,7 @@ const pool = new Pool({
   ssl: { rejectUnauthorized: false },
 });
 
+// Test DB connection
 (async () => {
   try {
     const client = await pool.connect();
@@ -55,60 +51,59 @@ Light mode. Apply Quick-Scan rules. Draft in Becky’s voice: sharp, certain, al
 ...
 `;
 
-// ===== STRIPE WEBHOOK =====
-// Raw body parser *only for this route*
-app.post("/stripe/webhook", express.raw({ type: "application/json" }), async (req, res) => {
-  const sig = req.headers["stripe-signature"];
-  try {
-    console.log("🔐 Verifying webhook signature...");
-    const event = stripe.webhooks.constructEvent(req.body, sig, SIGNING_SECRET);
-    console.log("✅ Stripe event received:", event.type);
+// ===== STRIPE WEBHOOK (must come BEFORE bodyParser.json) =====
+app.post(
+  "/stripe/webhook",
+  express.raw({ type: "application/json" }),
+  async (req, res) => {
+    const sig = req.headers["stripe-signature"];
+    console.log("🔐 Verifying webhook signature using:", SIGNING_SECRET);
 
-    if (event.type === "checkout.session.completed") {
-      const session = event.data.object;
-      const email = session.customer_details.email;
-      const customerId = session.customer;
+    try {
+      const event = stripe.webhooks.constructEvent(req.body, sig, SIGNING_SECRET);
+      console.log("✅ Stripe event received:", event.type);
 
-      console.log(`💡 Checkout completed for ${email} (customer ${customerId})`);
+      if (event.type === "checkout.session.completed") {
+        const session = event.data.object;
+        const email = session.customer_details.email;
+        const customerId = session.customer;
 
-      const result = await pool.query(
-        `INSERT INTO users (email, stripe_customer_id, is_subscriber)
-         VALUES ($1, $2, true)
-         ON CONFLICT (email)
-         DO UPDATE SET stripe_customer_id = $2, is_subscriber = true, updated_at = NOW()
-         RETURNING *`,
-        [email, customerId]
-      );
+        console.log(`💡 Checkout completed for ${email} (customer ${customerId})`);
 
-      console.log("📦 DB insert/update result:", result.rows[0]);
+        const result = await pool.query(
+          `INSERT INTO users (email, stripe_customer_id, is_subscriber)
+           VALUES ($1, $2, true)
+           ON CONFLICT (email)
+           DO UPDATE SET stripe_customer_id = $2, is_subscriber = true, updated_at = NOW()
+           RETURNING *`,
+          [email, customerId]
+        );
+        console.log("📦 DB insert/update result:", result.rows[0]);
+      }
+
+      if (event.type === "customer.subscription.updated") {
+        const subscription = event.data.object;
+        const customerId = subscription.customer;
+        const status = subscription.status === "active";
+
+        const result = await pool.query(
+          `UPDATE users SET is_subscriber = $1, stripe_subscription_id = $2, updated_at = NOW()
+           WHERE stripe_customer_id = $3
+           RETURNING *`,
+          [status, subscription.id, customerId]
+        );
+        console.log(`🔄 Subscription status updated:`, result.rows[0]);
+      }
+
+      res.status(200).send("ok");
+    } catch (err) {
+      console.error("❌ Webhook signature error:", err.message);
+      return res.status(400).send(`Webhook Error: ${err.message}`);
     }
-
-    if (event.type === "customer.subscription.updated") {
-      const subscription = event.data.object;
-      const customerId = subscription.customer;
-      const status = subscription.status === "active";
-
-      const result = await pool.query(
-        `UPDATE users 
-         SET is_subscriber = $1, stripe_subscription_id = $2, updated_at = NOW()
-         WHERE stripe_customer_id = $3
-         RETURNING *`,
-        [status, subscription.id, customerId]
-      );
-
-      console.log(`🔄 Subscription status updated: ${subscription.id} (${status})`);
-      console.log("📦 DB update result:", result.rows[0]);
-    }
-
-    res.status(200).send("ok");
-  } catch (err) {
-    console.error("❌ Webhook error:", err.message);
-    res.status(400).send(`Webhook Error: ${err.message}`);
   }
-});
+);
 
 // ===== MIDDLEWARE =====
-// NOTE: This must come *after* the webhook route so raw body is preserved there
 app.use(cors());
 app.use(bodyParser.json());
 
@@ -122,7 +117,7 @@ app.get("/create-checkout-session", async (_req, res) => {
   try {
     console.log("🔎 Using Price ID for checkout:", PRICE_ID);
     const session = await stripe.checkout.sessions.create({
-      customer_email: "tester@example.com", // required for Accounts V2 if no login
+      customer_email: "tester@example.com", // sandbox test email
       mode: "subscription",
       line_items: [{ price: PRICE_ID, quantity: 1 }],
       success_url: "https://agent-beta.onrender.com/success?session_id={CHECKOUT_SESSION_ID}",
@@ -157,18 +152,6 @@ app.get("/debug-prices", async (_req, res) => {
     res.json(prices.data);
   } catch (err) {
     console.error("❌ Error listing prices:", err.message);
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// ===== WHOAMI DEBUG =====
-app.get("/whoami", async (_req, res) => {
-  try {
-    const account = await stripe.accounts.retrieve();
-    console.log("🔑 Connected account:", account.id, account.email);
-    res.json({ id: account.id, email: account.email });
-  } catch (err) {
-    console.error("❌ Error retrieving account:", err.message);
     res.status(500).json({ error: err.message });
   }
 });
