@@ -182,6 +182,19 @@ app.get("/debug-prices", async (_req, res) => {
   }
 });
 
+// ===== WHOAMI DEBUG =====
+app.get("/whoami", async (_req, res) => {
+  try {
+    const account = await stripe.accounts.retrieve();
+    console.log("🔑 Connected account:", account.id, account.email);
+    res.json({ id: account.id, email: account.email });
+  } catch (err) {
+    console.error("❌ Error retrieving account:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+
 // ===== CHAT ENDPOINT =====
 app.post("/chat", async (req, res) => {
   const { message } = req.body;
