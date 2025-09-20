@@ -23,7 +23,7 @@ const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, {
 });
 
 // Hard-coded for testing. Replace with env var later.
-const PRICE_ID = "price_1S8go1CBPtCaSboQpciy2HQK";
+const PRICE_ID = "price_1S9OD8C0Z5UDd7Ye4p6SbZsH";
 const SIGNING_SECRET = (process.env.STRIPE_SIGNING_SECRET || "").trim();
 
 // ===== POSTGRES SETUP =====
