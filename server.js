@@ -22,7 +22,7 @@ const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, {
   apiVersion: "2025-06-30.basil",
 });
 
-const PRICE_ID = "price_1S9OD8C0Z5UDd7Ye4p6SbZsH"; // hard-coded for now
+const PRICE_ID = "price_1S9OD8C0Z5UDd7Ye4p6SbZsH"; // hard-coded for sandbox test
 const SIGNING_SECRET = (process.env.STRIPE_SIGNING_SECRET || "").trim();
 
 // ===== POSTGRES SETUP =====
@@ -51,7 +51,7 @@ Light mode. Apply Quick-Scan rules. Draft in Becky’s voice: sharp, certain, al
 ...
 `;
 
-// ===== STRIPE WEBHOOK (must come BEFORE bodyParser.json) =====
+// ===== STRIPE WEBHOOK (raw body ONLY here) =====
 app.post(
   "/stripe/webhook",
   express.raw({ type: "application/json" }),
@@ -103,9 +103,15 @@ app.post(
   }
 );
 
-// ===== MIDDLEWARE =====
+// ===== MIDDLEWARE for all other routes =====
+app.use((req, res, next) => {
+  if (req.originalUrl === "/stripe/webhook") {
+    next(); // skip JSON parser for Stripe webhooks
+  } else {
+    bodyParser.json()(req, res, next);
+  }
+});
 app.use(cors());
-app.use(bodyParser.json());
 
 // ===== STATIC PAGES =====
 app.get("/", (_req, res) => res.sendFile(path.join(__dirname, "subscribe.html")));
