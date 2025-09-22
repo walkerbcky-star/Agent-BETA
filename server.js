@@ -1,4 +1,3 @@
-// server.js
 import express from "express";
 import bodyParser from "body-parser";
 import fetch from "node-fetch";
@@ -92,9 +91,8 @@ app.post(
       const event = stripe.webhooks.constructEvent(req.body, sig, SIGNING_SECRET);
       console.log("✅ Stripe event received:", event.type);
 
-// 🔎 Debug: log all event payloads
-console.log("📨 Full event payload:", JSON.stringify(event, null, 2));
-
+      // 🔎 Debug: log all event payloads
+      console.log("📨 Full event payload:", JSON.stringify(event, null, 2));
 
       if (event.type === "checkout.session.completed") {
         const session = event.data.object;
@@ -138,6 +136,44 @@ console.log("📨 Full event payload:", JSON.stringify(event, null, 2));
         );
 
         console.log("📦 DB update result:", result.rows[0]);
+      }
+
+      // Smarter invoice.paid handler (for Workbench sandbox)
+      if (event.type === "invoice.paid") {
+        const invoice = event.data.object;
+        const customerId = invoice.customer;
+
+        // Try multiple places to find the subscription ID
+        let subscriptionId = invoice.subscription;
+
+        if (!subscriptionId && invoice.parent?.subscription_details) {
+          subscriptionId = invoice.parent.subscription_details.subscription;
+        }
+
+        if (
+          !subscriptionId &&
+          invoice.lines?.data &&
+          invoice.lines.data[0]?.parent?.subscription_item_details
+        ) {
+          subscriptionId =
+            invoice.lines.data[0].parent.subscription_item_details.subscription;
+        }
+
+        console.log(
+          `💰 Invoice paid for customer ${customerId}, subscription ${subscriptionId}`
+        );
+
+        const result = await pool.query(
+          `UPDATE users
+           SET stripe_subscription_id = $1,
+               is_subscriber = true,
+               updated_at = NOW()
+           WHERE stripe_customer_id = $2
+           RETURNING *`,
+          [subscriptionId, customerId]
+        );
+
+        console.log("📦 DB update from invoice.paid:", result.rows[0]);
       }
 
       res.status(200).send("ok");
@@ -209,7 +245,7 @@ app.post("/chat", async (req, res) => {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "Authorization": `Bearer ${OPENAI_KEY}`,
+        Authorization: `Bearer ${OPENAI_KEY}`,
       },
       body: JSON.stringify({
         model: "gpt-4o-mini",
@@ -222,7 +258,9 @@ app.post("/chat", async (req, res) => {
 
     const data = await response.json();
     if (!response.ok) {
-      return res.status(response.status).json({ error: data.error?.message || "OpenAI error" });
+      return res
+        .status(response.status)
+        .json({ error: data.error?.message || "OpenAI error" });
     }
     const reply = data.choices?.[0]?.message?.content || "No reply";
     res.json({ reply });
@@ -233,4 +271,6 @@ app.post("/chat", async (req, res) => {
 });
 
 // ===== START SERVER =====
-app.listen(3000, () => console.log("Server running on http://localhost:3000"));
+app.listen(process.env.PORT || 3000, () =>
+  console.log("Server running on http://localhost:3000")
+);
