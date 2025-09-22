@@ -92,6 +92,10 @@ app.post(
       const event = stripe.webhooks.constructEvent(req.body, sig, SIGNING_SECRET);
       console.log("✅ Stripe event received:", event.type);
 
+// 🔎 Debug: log all event payloads
+console.log("📨 Full event payload:", JSON.stringify(event, null, 2));
+
+
       if (event.type === "checkout.session.completed") {
         const session = event.data.object;
         const email = session.customer_details.email;
