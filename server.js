@@ -89,20 +89,25 @@ app.post(
       }
 
       if (event.type === "customer.subscription.updated") {
-        const subscription = event.data.object;
-        const customerId = subscription.customer;
-        const status = subscription.status === "active";
+  const subscription = event.data.object;
+  console.log("📋 Full subscription object:", subscription);
 
-        await pool.query(
-          `UPDATE users
-           SET is_subscriber = $1,
-               stripe_subscription_id = $2,
-               updated_at = NOW()
-           WHERE stripe_customer_id = $3`,
-          [status, subscription.id, customerId]
-        );
-        console.log(`🔄 Subscription status updated: ${subscription.id} (${status})`);
-      }
+  const customerId = subscription.customer;
+  const status = subscription.status === "active";
+
+  const result = await pool.query(
+    `UPDATE users
+     SET is_subscriber = $1,
+         stripe_subscription_id = $2,
+         updated_at = NOW()
+     WHERE stripe_customer_id = $3
+     RETURNING *`,
+    [status, subscription.id, customerId]
+  );
+
+  console.log("🔄 DB update result:", result.rows[0] || "No matching user found");
+}
+
 
       res.status(200).send("ok");
     } catch (err) {
