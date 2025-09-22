@@ -87,12 +87,8 @@ app.post(
   async (req, res) => {
     const sig = req.headers["stripe-signature"];
     try {
-      console.log("🔐 Verifying webhook signature...");
       const event = stripe.webhooks.constructEvent(req.body, sig, SIGNING_SECRET);
       console.log("✅ Stripe event received:", event.type);
-
-      // 🔎 Debug: log all event payloads
-      console.log("📨 Full event payload:", JSON.stringify(event, null, 2));
 
       if (event.type === "checkout.session.completed") {
         const session = event.data.object;
@@ -100,8 +96,7 @@ app.post(
         const customerId = session.customer;
         const subscriptionId = session.subscription;
 
-        console.log(`💡 Checkout completed for ${email} (customer ${customerId})`);
-        console.log(`🆔 Subscription ID: ${subscriptionId}`);
+        console.log(`💡 Checkout completed → ${email}, customer: ${customerId}, sub: ${subscriptionId}`);
 
         const result = await pool.query(
           `INSERT INTO users (email, stripe_customer_id, stripe_subscription_id, is_subscriber)
@@ -115,15 +110,19 @@ app.post(
           [email, customerId, subscriptionId]
         );
 
-        console.log("📦 DB insert/update result:", result.rows[0]);
+        console.log("📦 DB upsert:", {
+          email: result.rows[0]?.email,
+          customer: result.rows[0]?.stripe_customer_id,
+          subscription: result.rows[0]?.stripe_subscription_id,
+        });
       }
 
       if (event.type === "customer.subscription.updated") {
         const subscription = event.data.object;
-        console.log("🔎 Full subscription payload:", subscription);
-
         const customerId = subscription.customer;
         const status = subscription.status === "active";
+
+        console.log(`🔄 Subscription updated → customer: ${customerId}, sub: ${subscription.id}, active: ${status}`);
 
         const result = await pool.query(
           `UPDATE users
@@ -135,55 +134,51 @@ app.post(
           [status, subscription.id, customerId]
         );
 
-        console.log("📦 DB update result:", result.rows[0]);
+        console.log("📦 DB update:", {
+          customer: result.rows[0]?.stripe_customer_id,
+          subscription: result.rows[0]?.stripe_subscription_id,
+          active: result.rows[0]?.is_subscriber,
+        });
       }
 
-      // Smarter invoice.paid handler (for Workbench sandbox)
       if (event.type === "invoice.paid") {
-  const invoice = event.data.object;
-  const customerId = invoice.customer;
+        const invoice = event.data.object;
+        const customerId = invoice.customer;
 
-  // Try multiple places to find the subscription ID
-  let subscriptionId = invoice.subscription;
+        // Find subscription ID in multiple possible places
+        let subscriptionId = invoice.subscription;
+        if (!subscriptionId && invoice.parent?.subscription_details) {
+          subscriptionId = invoice.parent.subscription_details.subscription;
+        }
+        if (!subscriptionId && invoice.lines?.data?.[0]?.parent?.subscription_item_details) {
+          subscriptionId = invoice.lines.data[0].parent.subscription_item_details.subscription;
+        }
 
-  if (!subscriptionId && invoice.parent?.subscription_details) {
-    subscriptionId = invoice.parent.subscription_details.subscription;
-  }
+        const email = invoice.customer_email;
+        console.log(`💰 Invoice paid → ${email}, customer: ${customerId}, sub: ${subscriptionId}`);
 
-  if (
-    !subscriptionId &&
-    invoice.lines?.data &&
-    invoice.lines.data[0]?.parent?.subscription_item_details
-  ) {
-    subscriptionId =
-      invoice.lines.data[0].parent.subscription_item_details.subscription;
-  }
+        const result = await pool.query(
+          `INSERT INTO users (email, stripe_customer_id, stripe_subscription_id, is_subscriber)
+           VALUES ($1, $2, $3, true)
+           ON CONFLICT (email)
+           DO UPDATE SET stripe_customer_id = $2,
+                         stripe_subscription_id = $3,
+                         is_subscriber = true,
+                         updated_at = NOW()
+           RETURNING *`,
+          [email, customerId, subscriptionId]
+        );
 
-  const email = invoice.customer_email;
-
-  console.log(
-    `💰 Invoice paid for customer ${customerId}, subscription ${subscriptionId}, email ${email}`
-  );
-
-  const result = await pool.query(
-    `INSERT INTO users (email, stripe_customer_id, stripe_subscription_id, is_subscriber)
-     VALUES ($1, $2, $3, true)
-     ON CONFLICT (email)
-     DO UPDATE SET stripe_customer_id = $2,
-                   stripe_subscription_id = $3,
-                   is_subscriber = true,
-                   updated_at = NOW()
-     RETURNING *`,
-    [email, customerId, subscriptionId]
-  );
-
-  console.log("📦 DB upsert from invoice.paid:", result.rows[0]);
-}
-
+        console.log("📦 DB upsert:", {
+          email: result.rows[0]?.email,
+          customer: result.rows[0]?.stripe_customer_id,
+          subscription: result.rows[0]?.stripe_subscription_id,
+        });
+      }
 
       res.status(200).send("ok");
     } catch (err) {
-      console.error("❌ Webhook signature error:", err.message);
+      console.error("❌ Webhook error:", err.message);
       res.status(400).send(`Webhook Error: ${err.message}`);
     }
   }
@@ -209,7 +204,7 @@ app.get("/create-checkout-session", async (_req, res) => {
       success_url: "https://agent-beta.onrender.com/success?session_id={CHECKOUT_SESSION_ID}",
       cancel_url: "https://agent-beta.onrender.com/cancel",
     });
-    console.log("🛒 Checkout session created:", session.id, session.url);
+    console.log("🛒 Checkout session created:", session.id);
     return res.json({ url: session.url });
   } catch (err) {
     console.error("❌ Error creating session:", err.message);
