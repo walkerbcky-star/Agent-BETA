@@ -140,41 +140,46 @@ app.post(
 
       // Smarter invoice.paid handler (for Workbench sandbox)
       if (event.type === "invoice.paid") {
-        const invoice = event.data.object;
-        const customerId = invoice.customer;
+  const invoice = event.data.object;
+  const customerId = invoice.customer;
 
-        // Try multiple places to find the subscription ID
-        let subscriptionId = invoice.subscription;
+  // Try multiple places to find the subscription ID
+  let subscriptionId = invoice.subscription;
 
-        if (!subscriptionId && invoice.parent?.subscription_details) {
-          subscriptionId = invoice.parent.subscription_details.subscription;
-        }
+  if (!subscriptionId && invoice.parent?.subscription_details) {
+    subscriptionId = invoice.parent.subscription_details.subscription;
+  }
 
-        if (
-          !subscriptionId &&
-          invoice.lines?.data &&
-          invoice.lines.data[0]?.parent?.subscription_item_details
-        ) {
-          subscriptionId =
-            invoice.lines.data[0].parent.subscription_item_details.subscription;
-        }
+  if (
+    !subscriptionId &&
+    invoice.lines?.data &&
+    invoice.lines.data[0]?.parent?.subscription_item_details
+  ) {
+    subscriptionId =
+      invoice.lines.data[0].parent.subscription_item_details.subscription;
+  }
 
-        console.log(
-          `💰 Invoice paid for customer ${customerId}, subscription ${subscriptionId}`
-        );
+  const email = invoice.customer_email;
 
-        const result = await pool.query(
-          `UPDATE users
-           SET stripe_subscription_id = $1,
-               is_subscriber = true,
-               updated_at = NOW()
-           WHERE stripe_customer_id = $2
-           RETURNING *`,
-          [subscriptionId, customerId]
-        );
+  console.log(
+    `💰 Invoice paid for customer ${customerId}, subscription ${subscriptionId}, email ${email}`
+  );
 
-        console.log("📦 DB update from invoice.paid:", result.rows[0]);
-      }
+  const result = await pool.query(
+    `INSERT INTO users (email, stripe_customer_id, stripe_subscription_id, is_subscriber)
+     VALUES ($1, $2, $3, true)
+     ON CONFLICT (email)
+     DO UPDATE SET stripe_customer_id = $2,
+                   stripe_subscription_id = $3,
+                   is_subscriber = true,
+                   updated_at = NOW()
+     RETURNING *`,
+    [email, customerId, subscriptionId]
+  );
+
+  console.log("📦 DB upsert from invoice.paid:", result.rows[0]);
+}
+
 
       res.status(200).send("ok");
     } catch (err) {
