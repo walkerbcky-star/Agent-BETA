@@ -22,16 +22,12 @@
   <pre id="chatReply"></pre>
 
   <script>
-    // For now, we hardcode or set the email here.
     // Get email from URL path and save it
-const pathParts = window.location.pathname.split("/");
-const email = decodeURIComponent(pathParts[pathParts.length - 1]);
-localStorage.setItem("userEmail", email);
-
+    const pathParts = window.location.pathname.split("/");
+    const email = decodeURIComponent(pathParts[pathParts.length - 1]);
+    localStorage.setItem("userEmail", email);
 
     // Pull greeting from the server using email
-    const email = localStorage.getItem("userEmail");
-
     fetch(`/user-info/${encodeURIComponent(email)}`)
       .then(res => res.json())
       .then(data => {
