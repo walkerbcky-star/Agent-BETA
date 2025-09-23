@@ -49,35 +49,7 @@ const OPENAI_KEY = (process.env.OPENAI_API_KEY || "").trim();
 const GLOBAL_RULES = `
 Light mode. Apply Quick-Scan rules. Draft in Becky’s voice: sharp, certain, alive. 
 Voice Prompt = inspiration not law. Short-first. No extras unless asked.
-
-Quick-Scan Rules
-- No em dash
-- No bullet symbols (use hyphens)
-- No beige
-- No LinkedIn-safe or coachy tone
-- No filler coaching phrases (e.g., "Here’s the thing")
-- No padding unless requested
-- Rhythm varied: short lines hit, longer lines roll (no staccato crutch)
-- Analogy = hook + one beat, then cut to fix
-- One analogy max per piece
-- No recycling old analogies or set-pieces unless revived
-- Active voice as default (never passive unless flagged)
-
-Voice Spine
-- Sharp. Certain. Alive.
-- Declarative. Tell, don’t ask.
-- Irreverent when useful. Precise when needed.
-- Reads like an edit, not encouragement.
-- Rooted in conceptual art thinking: balance what’s in vs what’s left out.
-
-Structure Spine
-- Problem → Fix → Proof → CTA
-- Every section must earn its place
-- Copy moves fast: clarity first, persuasion through confidence
-
-Modes
-- Light Mode (default): Quick-Scan only, fast drafting
-- Full Check (on request): Quick-Scan + Voice Prompt reference
+...
 `;
 
 // ===== STRIPE WEBHOOK =====
@@ -174,6 +146,78 @@ app.post(
           customer: result.rows[0]?.stripe_customer_id,
           subscription: result.rows[0]?.stripe_subscription_id,
         });
+      }
+
+      // === NEW HANDLERS ===
+
+      // Subscription cancelled
+      if (event.type === "customer.subscription.deleted") {
+        const subscription = event.data.object;
+        const customerId = subscription.customer;
+
+        console.log(`❌ Subscription cancelled → customer: ${customerId}, sub: ${subscription.id}`);
+
+        const result = await pool.query(
+          `UPDATE users
+           SET is_subscriber = false,
+               stripe_subscription_id = $1,
+               canceled_at = NOW(),
+               updated_at = NOW()
+           WHERE stripe_customer_id = $2
+           RETURNING *`,
+          [subscription.id, customerId]
+        );
+
+        console.log("📦 DB update (cancel):", {
+          customer: result.rows[0]?.stripe_customer_id,
+          subscription: result.rows[0]?.stripe_subscription_id,
+          active: result.rows[0]?.is_subscriber,
+        });
+      }
+
+      // Payment failed
+      if (event.type === "invoice.payment_failed") {
+        const invoice = event.data.object;
+        const customerId = invoice.customer;
+        const subscriptionId = invoice.subscription;
+
+        console.log(`⚠️ Payment failed → customer: ${customerId}, sub: ${subscriptionId}`);
+
+        const result = await pool.query(
+          `UPDATE users
+           SET last_payment_failed_at = NOW(),
+               updated_at = NOW()
+           WHERE stripe_customer_id = $1
+           RETURNING *`,
+          [customerId]
+        );
+
+        console.log("📦 DB update (payment failed):", result.rows[0]);
+      }
+
+      // Subscription updated (grace period tracking)
+      if (event.type === "customer.subscription.updated") {
+        const subscription = event.data.object;
+        const customerId = subscription.customer;
+
+        const cancelAtPeriodEnd = subscription.cancel_at_period_end;
+        const periodEnd = new Date(subscription.current_period_end * 1000);
+
+        console.log(
+          `🔄 Subscription updated → customer: ${customerId}, cancel_at_period_end: ${cancelAtPeriodEnd}, period_end: ${periodEnd}`
+        );
+
+        const result = await pool.query(
+          `UPDATE users
+           SET cancel_at_period_end = $1,
+               period_end = $2,
+               updated_at = NOW()
+           WHERE stripe_customer_id = $3
+           RETURNING *`,
+          [cancelAtPeriodEnd, periodEnd, customerId]
+        );
+
+        console.log("📦 DB update (sub updated):", result.rows[0]);
       }
 
       res.status(200).send("ok");
