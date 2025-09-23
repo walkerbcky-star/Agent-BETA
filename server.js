@@ -98,27 +98,29 @@ app.post(
       console.log("Stripe event received:", event.type);
 
       if (event.type === "checkout.session.completed") {
-        const session = event.data.object;
-        const email = session.customer_details?.email;
-        const customerId = session.customer;
-        const subscriptionId = session.subscription;
+  const session = event.data.object;
+  const email = session.customer_details?.email;
+  const name = session.customer_details?.name || email.split("@")[0];
+  const customerId = session.customer;
+  const subscriptionId = session.subscription;
 
-        console.log(`Checkout completed → ${email}, customer: ${customerId}, sub: ${subscriptionId}`);
+  console.log(`Checkout completed → ${email}, customer: ${customerId}, sub: ${subscriptionId}`);
 
-        const result = await pool.query(
-          `INSERT INTO users (email, stripe_customer_id, stripe_subscription_id, is_subscriber)
-           VALUES ($1, $2, $3, true)
-           ON CONFLICT (email)
-           DO UPDATE SET stripe_customer_id = $2,
-                         stripe_subscription_id = $3,
-                         is_subscriber = true,
-                         updated_at = NOW()
-           RETURNING *`,
-          [email, customerId, subscriptionId]
-        );
+  const result = await pool.query(
+    `INSERT INTO users (email, name, stripe_customer_id, stripe_subscription_id, is_subscriber)
+     VALUES ($1, $2, $3, $4, true)
+     ON CONFLICT (email)
+     DO UPDATE SET name = $2,
+                   stripe_customer_id = $3,
+                   stripe_subscription_id = $4,
+                   is_subscriber = true,
+                   updated_at = NOW()
+     RETURNING *`,
+    [email, name, customerId, subscriptionId]
+  );
 
-        console.log("DB upsert:", result.rows[0]);
-      }
+  console.log("DB upsert:", result.rows[0]);
+}
 
       if (event.type === "invoice.paid") {
         const invoice = event.data.object;
