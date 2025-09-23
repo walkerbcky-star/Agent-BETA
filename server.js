@@ -98,66 +98,67 @@ app.post(
       console.log("Stripe event received:", event.type);
 
       if (event.type === "checkout.session.completed") {
-  const session = event.data.object;
-  const email = session.customer_details?.email;
-  const name = session.customer_details?.name || email.split("@")[0];
-  const customerId = session.customer;
-  const subscriptionId = session.subscription;
+        const session = event.data.object;
+        const email = session.customer_details?.email;
+        const name = session.customer_details?.name || email.split("@")[0];
+        const customerId = session.customer;
+        const subscriptionId = session.subscription;
 
-  console.log(`Checkout completed → ${email}, customer: ${customerId}, sub: ${subscriptionId}`);
+        console.log(`Checkout completed → ${email}, customer: ${customerId}, sub: ${subscriptionId}`);
 
-  const result = await pool.query(
-    `INSERT INTO users (email, name, stripe_customer_id, stripe_subscription_id, is_subscriber)
-     VALUES ($1, $2, $3, $4, true)
-     ON CONFLICT (email)
-     DO UPDATE SET name = $2,
-                   stripe_customer_id = $3,
-                   stripe_subscription_id = $4,
-                   is_subscriber = true,
-                   updated_at = NOW()
-     RETURNING *`,
-    [email, name, customerId, subscriptionId]
-  );
+        const result = await pool.query(
+          `INSERT INTO users (email, name, stripe_customer_id, stripe_subscription_id, is_subscriber)
+           VALUES ($1, $2, $3, $4, true)
+           ON CONFLICT (email)
+           DO UPDATE SET name = $2,
+                         stripe_customer_id = $3,
+                         stripe_subscription_id = $4,
+                         is_subscriber = true,
+                         updated_at = NOW()
+           RETURNING *`,
+          [email, name, customerId, subscriptionId]
+        );
 
-  console.log("DB upsert:", result.rows[0]);
-}
+        console.log("DB upsert:", result.rows[0]);
+      }
 
       if (event.type === "invoice.paid") {
-  const invoice = event.data.object;
-  const customerId = invoice.customer;
+        const invoice = event.data.object;
+        const customerId = invoice.customer;
 
-  let subscriptionId = invoice.subscription;
-  if (!subscriptionId && invoice.parent?.subscription_details) {
-    subscriptionId = invoice.parent.subscription_details.subscription;
-  }
-  if (!subscriptionId && invoice.lines?.data?.[0]?.parent?.subscription_item_details) {
-    subscriptionId = invoice.lines.data[0].parent.subscription_item_details.subscription;
-  }
+        let subscriptionId = invoice.subscription;
+        if (!subscriptionId && invoice.parent?.subscription_details) {
+          subscriptionId = invoice.parent.subscription_details.subscription;
+        }
+        if (!subscriptionId && invoice.lines?.data?.[0]?.parent?.subscription_item_details) {
+          subscriptionId = invoice.lines.data[0].parent.subscription_item_details.subscription;
+        }
 
-  const email = invoice.customer_email;
-  const name = invoice.customer_name || email.split("@")[0];
-  console.log(`Invoice paid → ${email}, customer: ${customerId}, sub: ${subscriptionId}`);
+        const email = invoice.customer_email;
+        const name = invoice.customer_name || email.split("@")[0];
+        console.log(`Invoice paid → ${email}, customer: ${customerId}, sub: ${subscriptionId}`);
 
-  const result = await pool.query(
-    `INSERT INTO users (email, name, stripe_customer_id, stripe_subscription_id, is_subscriber)
-     VALUES ($1, $2, $3, $4, true)
-     ON CONFLICT (email)
-     DO UPDATE SET name = $2,
-                   stripe_customer_id = $3,
-                   stripe_subscription_id = $4,
-                   is_subscriber = true,
-                   updated_at = NOW()
-     RETURNING *`,
-    [email, name, customerId, subscriptionId]
-  );
+        const result = await pool.query(
+          `INSERT INTO users (email, name, stripe_customer_id, stripe_subscription_id, is_subscriber)
+           VALUES ($1, $2, $3, $4, true)
+           ON CONFLICT (email)
+           DO UPDATE SET name = $2,
+                         stripe_customer_id = $3,
+                         stripe_subscription_id = $4,
+                         is_subscriber = true,
+                         updated_at = NOW()
+           RETURNING *`,
+          [email, name, customerId, subscriptionId]
+        );
 
-  console.log("DB upsert:", result.rows[0]);
-}
-
+        console.log("DB upsert:", result.rows[0]);
+      }
 
       if (event.type === "customer.subscription.updated") {
         const subscription = event.data.object;
         const customerId = subscription.customer;
+        const email = subscription.customer_email || null;
+        const name = subscription.customer_name || (email ? email.split("@")[0] : null);
 
         const cancelAtPeriodEnd = subscription.cancel_at_period_end;
         const periodEnd = subscription.current_period_end
@@ -170,12 +171,13 @@ app.post(
 
         const result = await pool.query(
           `UPDATE users
-           SET cancel_at_period_end = $1,
-               period_end = $2,
+           SET name = COALESCE($1, name),
+               cancel_at_period_end = $2,
+               period_end = $3,
                updated_at = NOW()
-           WHERE stripe_customer_id = $3
+           WHERE stripe_customer_id = $4
            RETURNING *`,
-          [cancelAtPeriodEnd, periodEnd, customerId]
+          [name, cancelAtPeriodEnd, periodEnd, customerId]
         );
 
         console.log("DB update (sub updated):", result.rows[0]);
@@ -184,18 +186,21 @@ app.post(
       if (event.type === "customer.subscription.deleted") {
         const subscription = event.data.object;
         const customerId = subscription.customer;
+        const email = subscription.customer_email || null;
+        const name = subscription.customer_name || (email ? email.split("@")[0] : null);
 
         console.log(`Subscription cancelled → customer: ${customerId}, sub: ${subscription.id}`);
 
         const result = await pool.query(
           `UPDATE users
-           SET is_subscriber = false,
-               stripe_subscription_id = $1,
+           SET name = COALESCE($1, name),
+               is_subscriber = false,
+               stripe_subscription_id = $2,
                canceled_at = NOW(),
                updated_at = NOW()
-           WHERE stripe_customer_id = $2
+           WHERE stripe_customer_id = $3
            RETURNING *`,
-          [subscription.id, customerId]
+          [name, subscription.id, customerId]
         );
 
         console.log("DB update (cancel):", result.rows[0]);
@@ -204,16 +209,19 @@ app.post(
       if (event.type === "invoice.payment_failed") {
         const invoice = event.data.object;
         const customerId = invoice.customer;
+        const email = invoice.customer_email || null;
+        const name = invoice.customer_name || (email ? email.split("@")[0] : null);
 
         console.log(`Payment failed → customer: ${customerId}, sub: ${invoice.subscription}`);
 
         const result = await pool.query(
           `UPDATE users
-           SET last_payment_failed_at = NOW(),
+           SET name = COALESCE($1, name),
+               last_payment_failed_at = NOW(),
                updated_at = NOW()
-           WHERE stripe_customer_id = $1
+           WHERE stripe_customer_id = $2
            RETURNING *`,
-          [customerId]
+          [name, customerId]
         );
 
         console.log("DB update (payment failed):", result.rows[0]);
@@ -226,6 +234,7 @@ app.post(
     }
   }
 );
+
 
 // ===== MIDDLEWARE =====
 app.use(cors());
