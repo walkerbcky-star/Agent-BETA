@@ -227,7 +227,6 @@ app.use(cors());
 app.use(bodyParser.json());
 
 // ===== STATIC PAGES =====
-
 app.get("/", (_req, res) => 
   res.sendFile(path.join(__dirname, "subscribe.html"))
 );
@@ -240,9 +239,10 @@ app.get("/cancel", (_req, res) =>
   res.sendFile(path.join(__dirname, "subscribe.html"))
 );
 
-app.get("/chat-ui", (_req, res) => 
+app.get("/chat-ui/:email", (_req, res) => 
   res.sendFile(path.join(__dirname, "chat.html"))
 );
+
 
 
 // ===== CHECKOUT SESSION =====
@@ -332,6 +332,28 @@ app.post("/chat", async (req, res) => {
 
   } catch (err) {
     console.error("Chat error:", err.message);
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
+// ===== USER INFO ENDPOINT =====
+app.get("/user-info/:email", async (req, res) => {
+  const email = req.params.email;
+
+  try {
+    const result = await pool.query(
+      `SELECT email, stripe_customer_id, is_subscriber FROM users WHERE email=$1 LIMIT 1`,
+      [email]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: "User not found" });
+    }
+
+    const user = result.rows[0];
+    res.json({ name: user.email.split("@")[0], ...user }); // simple name from email prefix
+  } catch (err) {
+    console.error("User lookup error:", err.message);
     res.status(500).json({ error: "Server error" });
   }
 });
