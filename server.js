@@ -123,34 +123,37 @@ app.post(
 }
 
       if (event.type === "invoice.paid") {
-        const invoice = event.data.object;
-        const customerId = invoice.customer;
+  const invoice = event.data.object;
+  const customerId = invoice.customer;
 
-        let subscriptionId = invoice.subscription;
-        if (!subscriptionId && invoice.parent?.subscription_details) {
-          subscriptionId = invoice.parent.subscription_details.subscription;
-        }
-        if (!subscriptionId && invoice.lines?.data?.[0]?.parent?.subscription_item_details) {
-          subscriptionId = invoice.lines.data[0].parent.subscription_item_details.subscription;
-        }
+  let subscriptionId = invoice.subscription;
+  if (!subscriptionId && invoice.parent?.subscription_details) {
+    subscriptionId = invoice.parent.subscription_details.subscription;
+  }
+  if (!subscriptionId && invoice.lines?.data?.[0]?.parent?.subscription_item_details) {
+    subscriptionId = invoice.lines.data[0].parent.subscription_item_details.subscription;
+  }
 
-        const email = invoice.customer_email;
-        console.log(`Invoice paid → ${email}, customer: ${customerId}, sub: ${subscriptionId}`);
+  const email = invoice.customer_email;
+  const name = invoice.customer_name || email.split("@")[0];
+  console.log(`Invoice paid → ${email}, customer: ${customerId}, sub: ${subscriptionId}`);
 
-        const result = await pool.query(
-          `INSERT INTO users (email, stripe_customer_id, stripe_subscription_id, is_subscriber)
-           VALUES ($1, $2, $3, true)
-           ON CONFLICT (email)
-           DO UPDATE SET stripe_customer_id = $2,
-                         stripe_subscription_id = $3,
-                         is_subscriber = true,
-                         updated_at = NOW()
-           RETURNING *`,
-          [email, customerId, subscriptionId]
-        );
+  const result = await pool.query(
+    `INSERT INTO users (email, name, stripe_customer_id, stripe_subscription_id, is_subscriber)
+     VALUES ($1, $2, $3, $4, true)
+     ON CONFLICT (email)
+     DO UPDATE SET name = $2,
+                   stripe_customer_id = $3,
+                   stripe_subscription_id = $4,
+                   is_subscriber = true,
+                   updated_at = NOW()
+     RETURNING *`,
+    [email, name, customerId, subscriptionId]
+  );
 
-        console.log("DB upsert:", result.rows[0]);
-      }
+  console.log("DB upsert:", result.rows[0]);
+}
+
 
       if (event.type === "customer.subscription.updated") {
         const subscription = event.data.object;
