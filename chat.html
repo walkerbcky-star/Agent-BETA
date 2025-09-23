@@ -23,12 +23,23 @@
 
   <script>
     // For now, we hardcode or set the email here.
-    // Later this can be filled from your login/session system.
     localStorage.setItem("userEmail", "tester@example.com");
 
-// Fake lookup until we wire DB → replace with real fetch later
-const userName = "Alice"; 
-document.getElementById("welcomeMessage").textContent = `Welcome back, ${userName}`;
+    // Pull greeting from the server using email
+    const email = localStorage.getItem("userEmail");
+
+    fetch(`/user-info/${encodeURIComponent(email)}`)
+      .then(res => res.json())
+      .then(data => {
+        if (data.error) {
+          document.getElementById("welcomeMessage").textContent = "Welcome to the Chat";
+        } else {
+          document.getElementById("welcomeMessage").textContent = `Welcome back, ${data.name}`;
+        }
+      })
+      .catch(() => {
+        document.getElementById("welcomeMessage").textContent = "Welcome to the Chat";
+      });
 
     const chatForm = document.getElementById("chatForm");
     const chatInput = document.getElementById("chatInput");
@@ -38,7 +49,6 @@ document.getElementById("welcomeMessage").textContent = `Welcome back, ${userNam
       e.preventDefault();
 
       const message = chatInput.value;
-      const email = localStorage.getItem("userEmail");
 
       const res = await fetch("/chat", {
         method: "POST",
