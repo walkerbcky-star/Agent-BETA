@@ -12,7 +12,7 @@
   </style>
 </head>
 <body>
-  <h1>Welcome to the Chat</h1>
+  <h1 id="welcomeMessage">Welcome to the Chat</h1>
 
   <form id="chatForm">
     <input type="text" id="chatInput" placeholder="Type your message..." required />
@@ -25,6 +25,10 @@
     // For now, we hardcode or set the email here.
     // Later this can be filled from your login/session system.
     localStorage.setItem("userEmail", "tester@example.com");
+
+// Fake lookup until we wire DB → replace with real fetch later
+const userName = "Alice"; 
+document.getElementById("welcomeMessage").textContent = `Welcome back, ${userName}`;
 
     const chatForm = document.getElementById("chatForm");
     const chatInput = document.getElementById("chatInput");
