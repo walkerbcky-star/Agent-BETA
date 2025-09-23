@@ -351,7 +351,8 @@ app.get("/user-info/:email", async (req, res) => {
     }
 
     const user = result.rows[0];
-    res.json({ name: user.email.split("@")[0], ...user }); // simple name from email prefix
+    res.json({ name: user.name || user.email.split("@")[0], ...user });
+
   } catch (err) {
     console.error("User lookup error:", err.message);
     res.status(500).json({ error: "Server error" });
