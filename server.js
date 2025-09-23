@@ -275,10 +275,22 @@ app.get("/debug-prices", async (_req, res) => {
   }
 });
 
-// ===== CHAT ENDPOINT =====
+// ===== CHAT ENDPOINT WITH SUBSCRIPTION CHECK =====
 app.post("/chat", async (req, res) => {
-  const { message } = req.body;
+  const { message, email } = req.body; // user must send their email with the request
+
   try {
+    // 1. Look up user in DB
+    const result = await pool.query(
+      `SELECT is_subscriber FROM users WHERE email = $1 LIMIT 1`,
+      [email]
+    );
+
+    if (result.rows.length === 0 || !result.rows[0].is_subscriber) {
+      return res.status(403).json({ error: "Subscription required to use this service." });
+    }
+
+    // 2. User is a subscriber → call OpenAI
     const response = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
       headers: {
@@ -300,13 +312,16 @@ app.post("/chat", async (req, res) => {
         .status(response.status)
         .json({ error: data.error?.message || "OpenAI error" });
     }
+
     const reply = data.choices?.[0]?.message?.content || "No reply";
     res.json({ reply });
+
   } catch (err) {
-    console.error("Network/Fetch error:", err);
-    res.status(500).json({ error: "Network error calling OpenAI" });
+    console.error("Chat error:", err.message);
+    res.status(500).json({ error: "Server error" });
   }
 });
+
 
 // ===== START SERVER =====
 app.listen(process.env.PORT || 3000, () =>
