@@ -23,7 +23,11 @@
 
   <script>
     // For now, we hardcode or set the email here.
-    localStorage.setItem("userEmail", "tester@example.com");
+    // Get email from URL path and save it
+const pathParts = window.location.pathname.split("/");
+const email = decodeURIComponent(pathParts[pathParts.length - 1]);
+localStorage.setItem("userEmail", email);
+
 
     // Pull greeting from the server using email
     const email = localStorage.getItem("userEmail");
