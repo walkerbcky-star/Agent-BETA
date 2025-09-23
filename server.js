@@ -227,9 +227,23 @@ app.use(cors());
 app.use(bodyParser.json());
 
 // ===== STATIC PAGES =====
-app.get("/", (_req, res) => res.sendFile(path.join(__dirname, "subscribe.html")));
-app.get("/success", (_req, res) => res.sendFile(path.join(__dirname, "success.html")));
-app.get("/cancel", (_req, res) => res.sendFile(path.join(__dirname, "subscribe.html")));
+
+app.get("/", (_req, res) => 
+  res.sendFile(path.join(__dirname, "subscribe.html"))
+);
+
+app.get("/success", (_req, res) => 
+  res.sendFile(path.join(__dirname, "success.html"))
+);
+
+app.get("/cancel", (_req, res) => 
+  res.sendFile(path.join(__dirname, "subscribe.html"))
+);
+
+app.get("/chat-ui", (_req, res) => 
+  res.sendFile(path.join(__dirname, "chat.html"))
+);
+
 
 // ===== CHECKOUT SESSION =====
 app.get("/create-checkout-session", async (_req, res) => {
