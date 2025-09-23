@@ -21,7 +21,6 @@ const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, {
   apiVersion: "2025-06-30.basil",
 });
 
-// Hard-coded for now; can move to env var later
 const PRICE_ID = "price_1S9OD8C0Z5UDd7Ye4p6SbZsH";
 const SIGNING_SECRET = (process.env.STRIPE_SIGNING_SECRET || "").trim();
 
@@ -49,7 +48,35 @@ const OPENAI_KEY = (process.env.OPENAI_API_KEY || "").trim();
 const GLOBAL_RULES = `
 Light mode. Apply Quick-Scan rules. Draft in Becky’s voice: sharp, certain, alive. 
 Voice Prompt = inspiration not law. Short-first. No extras unless asked.
-...
+
+Quick-Scan Rules
+- No em dash
+- No bullet symbols (use hyphens)
+- No beige
+- No LinkedIn-safe or coachy tone
+- No filler coaching phrases (e.g., "Here’s the thing")
+- No padding unless requested
+- Rhythm varied: short lines hit, longer lines roll (no staccato crutch)
+- Analogy = hook + one beat, then cut to fix
+- One analogy max per piece
+- No recycling old analogies or set-pieces unless revived
+- Active voice as default (never passive unless flagged)
+
+Voice Spine
+- Sharp. Certain. Alive.
+- Declarative. Tell, don’t ask.
+- Irreverent when useful. Precise when needed.
+- Reads like an edit, not encouragement.
+- Rooted in conceptual art thinking: balance what’s in vs what’s left out.
+
+Structure Spine
+- Problem → Fix → Proof → CTA
+- Every section must earn its place
+- Copy moves fast: clarity first, persuasion through confidence
+
+Modes
+- Light Mode (default): Quick-Scan only, fast drafting
+- Full Check (on request): Quick-Scan + Voice Prompt reference
 `;
 
 // ===== STRIPE WEBHOOK =====
@@ -58,17 +85,25 @@ app.post(
   express.raw({ type: "application/json" }),
   async (req, res) => {
     const sig = req.headers["stripe-signature"];
+    let event;
+
     try {
-      const event = stripe.webhooks.constructEvent(req.body, sig, SIGNING_SECRET);
-      console.log("✅ Stripe event received:", event.type);
+      // bypass if DISABLE_STRIPE_SIGNING=true
+      if (process.env.DISABLE_STRIPE_SIGNING === "true") {
+        event = JSON.parse(req.body.toString());
+      } else {
+        event = stripe.webhooks.constructEvent(req.body, sig, SIGNING_SECRET);
+      }
+
+      console.log("Stripe event received:", event.type);
 
       if (event.type === "checkout.session.completed") {
         const session = event.data.object;
-        const email = session.customer_details.email;
+        const email = session.customer_details?.email;
         const customerId = session.customer;
         const subscriptionId = session.subscription;
 
-        console.log(`💡 Checkout completed → ${email}, customer: ${customerId}, sub: ${subscriptionId}`);
+        console.log(`Checkout completed → ${email}, customer: ${customerId}, sub: ${subscriptionId}`);
 
         const result = await pool.query(
           `INSERT INTO users (email, stripe_customer_id, stripe_subscription_id, is_subscriber)
@@ -82,42 +117,13 @@ app.post(
           [email, customerId, subscriptionId]
         );
 
-        console.log("📦 DB upsert:", {
-          email: result.rows[0]?.email,
-          customer: result.rows[0]?.stripe_customer_id,
-          subscription: result.rows[0]?.stripe_subscription_id,
-        });
-      }
-
-      if (event.type === "customer.subscription.updated") {
-        const subscription = event.data.object;
-        const customerId = subscription.customer;
-        const status = subscription.status === "active";
-
-        console.log(`🔄 Subscription updated → customer: ${customerId}, sub: ${subscription.id}, active: ${status}`);
-
-        const result = await pool.query(
-          `UPDATE users
-           SET is_subscriber = $1,
-               stripe_subscription_id = $2,
-               updated_at = NOW()
-           WHERE stripe_customer_id = $3
-           RETURNING *`,
-          [status, subscription.id, customerId]
-        );
-
-        console.log("📦 DB update:", {
-          customer: result.rows[0]?.stripe_customer_id,
-          subscription: result.rows[0]?.stripe_subscription_id,
-          active: result.rows[0]?.is_subscriber,
-        });
+        console.log("DB upsert:", result.rows[0]);
       }
 
       if (event.type === "invoice.paid") {
         const invoice = event.data.object;
         const customerId = invoice.customer;
 
-        // Find subscription ID in multiple possible places
         let subscriptionId = invoice.subscription;
         if (!subscriptionId && invoice.parent?.subscription_details) {
           subscriptionId = invoice.parent.subscription_details.subscription;
@@ -127,7 +133,7 @@ app.post(
         }
 
         const email = invoice.customer_email;
-        console.log(`💰 Invoice paid → ${email}, customer: ${customerId}, sub: ${subscriptionId}`);
+        console.log(`Invoice paid → ${email}, customer: ${customerId}, sub: ${subscriptionId}`);
 
         const result = await pool.query(
           `INSERT INTO users (email, stripe_customer_id, stripe_subscription_id, is_subscriber)
@@ -141,70 +147,20 @@ app.post(
           [email, customerId, subscriptionId]
         );
 
-        console.log("📦 DB upsert:", {
-          email: result.rows[0]?.email,
-          customer: result.rows[0]?.stripe_customer_id,
-          subscription: result.rows[0]?.stripe_subscription_id,
-        });
+        console.log("DB upsert:", result.rows[0]);
       }
 
-      // === NEW HANDLERS ===
-
-      // Subscription cancelled
-      if (event.type === "customer.subscription.deleted") {
-        const subscription = event.data.object;
-        const customerId = subscription.customer;
-
-        console.log(`❌ Subscription cancelled → customer: ${customerId}, sub: ${subscription.id}`);
-
-        const result = await pool.query(
-          `UPDATE users
-           SET is_subscriber = false,
-               stripe_subscription_id = $1,
-               canceled_at = NOW(),
-               updated_at = NOW()
-           WHERE stripe_customer_id = $2
-           RETURNING *`,
-          [subscription.id, customerId]
-        );
-
-        console.log("📦 DB update (cancel):", {
-          customer: result.rows[0]?.stripe_customer_id,
-          subscription: result.rows[0]?.stripe_subscription_id,
-          active: result.rows[0]?.is_subscriber,
-        });
-      }
-
-      // Payment failed
-      if (event.type === "invoice.payment_failed") {
-        const invoice = event.data.object;
-        const customerId = invoice.customer;
-        const subscriptionId = invoice.subscription;
-
-        console.log(`⚠️ Payment failed → customer: ${customerId}, sub: ${subscriptionId}`);
-
-        const result = await pool.query(
-          `UPDATE users
-           SET last_payment_failed_at = NOW(),
-               updated_at = NOW()
-           WHERE stripe_customer_id = $1
-           RETURNING *`,
-          [customerId]
-        );
-
-        console.log("📦 DB update (payment failed):", result.rows[0]);
-      }
-
-      // Subscription updated (grace period tracking)
       if (event.type === "customer.subscription.updated") {
         const subscription = event.data.object;
         const customerId = subscription.customer;
 
         const cancelAtPeriodEnd = subscription.cancel_at_period_end;
-        const periodEnd = new Date(subscription.current_period_end * 1000);
+        const periodEnd = subscription.current_period_end
+          ? new Date(subscription.current_period_end * 1000)
+          : null;
 
         console.log(
-          `🔄 Subscription updated → customer: ${customerId}, cancel_at_period_end: ${cancelAtPeriodEnd}, period_end: ${periodEnd}`
+          `Subscription updated → customer: ${customerId}, cancel_at_period_end: ${cancelAtPeriodEnd}, period_end: ${periodEnd}`
         );
 
         const result = await pool.query(
@@ -217,12 +173,50 @@ app.post(
           [cancelAtPeriodEnd, periodEnd, customerId]
         );
 
-        console.log("📦 DB update (sub updated):", result.rows[0]);
+        console.log("DB update (sub updated):", result.rows[0]);
+      }
+
+      if (event.type === "customer.subscription.deleted") {
+        const subscription = event.data.object;
+        const customerId = subscription.customer;
+
+        console.log(`Subscription cancelled → customer: ${customerId}, sub: ${subscription.id}`);
+
+        const result = await pool.query(
+          `UPDATE users
+           SET is_subscriber = false,
+               stripe_subscription_id = $1,
+               canceled_at = NOW(),
+               updated_at = NOW()
+           WHERE stripe_customer_id = $2
+           RETURNING *`,
+          [subscription.id, customerId]
+        );
+
+        console.log("DB update (cancel):", result.rows[0]);
+      }
+
+      if (event.type === "invoice.payment_failed") {
+        const invoice = event.data.object;
+        const customerId = invoice.customer;
+
+        console.log(`Payment failed → customer: ${customerId}, sub: ${invoice.subscription}`);
+
+        const result = await pool.query(
+          `UPDATE users
+           SET last_payment_failed_at = NOW(),
+               updated_at = NOW()
+           WHERE stripe_customer_id = $1
+           RETURNING *`,
+          [customerId]
+        );
+
+        console.log("DB update (payment failed):", result.rows[0]);
       }
 
       res.status(200).send("ok");
     } catch (err) {
-      console.error("❌ Webhook error:", err.message);
+      console.error("Webhook error:", err.message);
       res.status(400).send(`Webhook Error: ${err.message}`);
     }
   }
@@ -240,18 +234,18 @@ app.get("/cancel", (_req, res) => res.sendFile(path.join(__dirname, "subscribe.h
 // ===== CHECKOUT SESSION =====
 app.get("/create-checkout-session", async (_req, res) => {
   try {
-    console.log("🔎 Using Price ID for checkout:", PRICE_ID);
+    console.log("Using Price ID for checkout:", PRICE_ID);
     const session = await stripe.checkout.sessions.create({
-      customer_email: "tester@example.com", // Sandbox email
+      customer_email: "tester@example.com",
       mode: "subscription",
       line_items: [{ price: PRICE_ID, quantity: 1 }],
       success_url: "https://agent-beta.onrender.com/success?session_id={CHECKOUT_SESSION_ID}",
       cancel_url: "https://agent-beta.onrender.com/cancel",
     });
-    console.log("🛒 Checkout session created:", session.id);
+    console.log("Checkout session created:", session.id, session.url);
     return res.json({ url: session.url });
   } catch (err) {
-    console.error("❌ Error creating session:", err.message);
+    console.error("Error creating session:", err.message);
     return res.status(500).json({ error: err.message });
   }
 });
@@ -273,10 +267,10 @@ app.get("/session-status", async (req, res) => {
 app.get("/debug-prices", async (_req, res) => {
   try {
     const prices = await stripe.prices.list({ limit: 10 });
-    console.log("📋 Available prices:", prices.data.map(p => p.id));
+    console.log("Available prices:", prices.data.map((p) => p.id));
     res.json(prices.data);
   } catch (err) {
-    console.error("❌ Error listing prices:", err.message);
+    console.error("Error listing prices:", err.message);
     res.status(500).json({ error: err.message });
   }
 });
