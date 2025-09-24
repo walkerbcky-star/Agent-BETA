@@ -355,8 +355,8 @@ app.get("/user-info/:email", async (req, res) => {
   const email = req.params.email;
 
   try {
-    const result = await pool.query(
-      `SELECT email, stripe_customer_id, is_subscriber FROM users WHERE email=$1 LIMIT 1`,
+        const result = await pool.query(
+      `SELECT email, name, stripe_customer_id, is_subscriber FROM users WHERE email=$1 LIMIT 1`,
       [email]
     );
 
