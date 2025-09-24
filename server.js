@@ -268,6 +268,11 @@ app.get("/post-checkout", async (req, res) => {
   }
 });
 
+// Updated: allow /chat-ui/:email
+app.get("/chat-ui/:email", (_req, res) =>
+  res.sendFile(path.join(__dirname, "chat.html"))
+);
+
 
 
 // ===== CHECKOUT SESSION =====
