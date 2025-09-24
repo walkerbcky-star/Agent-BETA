@@ -27,7 +27,7 @@
     const email = decodeURIComponent(pathParts[pathParts.length - 1]);
     localStorage.setItem("userEmail", email);
 
-    // Pull greeting from the server using email
+    // Pull greeting + token from the server using email
     fetch(`/user-info/${encodeURIComponent(email)}`)
       .then(res => res.json())
       .then(data => {
@@ -35,6 +35,7 @@
           document.getElementById("welcomeMessage").textContent = "Welcome to the Chat";
         } else {
           document.getElementById("welcomeMessage").textContent = `Welcome back, ${data.name}`;
+          localStorage.setItem("userToken", data.token); // store token in browser
         }
       })
       .catch(() => {
@@ -49,11 +50,12 @@
       e.preventDefault();
 
       const message = chatInput.value;
+      const token = localStorage.getItem("userToken");
 
       const res = await fetch("/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, message }),
+        body: JSON.stringify({ email, token, message }),
       });
 
       const data = await res.json();

@@ -372,7 +372,12 @@ app.get("/user-info/:email", async (req, res) => {
     }
 
     const user = result.rows[0];
-res.json({ name: user.name || user.email.split("@")[0], ...user });
+res.json({
+  name: user.name || user.email.split("@")[0],
+  email: user.email,
+  token: user.api_token
+});
+
 
 
   } catch (err) {
