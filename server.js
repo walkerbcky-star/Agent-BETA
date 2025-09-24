@@ -244,21 +244,29 @@ app.use(cors());
 app.use(bodyParser.json());
 
 // ===== STATIC PAGES =====
-app.get("/", (_req, res) => 
-  res.sendFile(path.join(__dirname, "subscribe.html"))
-);
+app.get("/", (_req, res) => res.sendFile(path.join(__dirname, "subscribe.html")));
+app.get("/success", (_req, res) => res.sendFile(path.join(__dirname, "success.html")));
+app.get("/cancel", (_req, res) => res.sendFile(path.join(__dirname, "subscribe.html")));
 
-app.get("/success", (_req, res) => 
-  res.sendFile(path.join(__dirname, "success.html"))
-);
+// New: redirect after Stripe checkout
+app.get("/post-checkout", async (req, res) => {
+  const sessionId = req.query.session_id;
 
-app.get("/cancel", (_req, res) => 
-  res.sendFile(path.join(__dirname, "subscribe.html"))
-);
+  try {
+    const session = await stripe.checkout.sessions.retrieve(sessionId);
+    const email = session.customer_details?.email;
 
-app.get("/chat-ui/:email", (_req, res) => 
-  res.sendFile(path.join(__dirname, "chat.html"))
-);
+    if (!email) {
+      return res.redirect("/success"); // fallback if no email found
+    }
+
+    // Redirect to personalised chat page
+    res.redirect(`/chat-ui/${encodeURIComponent(email)}`);
+  } catch (err) {
+    console.error("Post-checkout redirect error:", err.message);
+    res.redirect("/success");
+  }
+});
 
 
 
@@ -270,7 +278,8 @@ app.get("/create-checkout-session", async (_req, res) => {
       customer_email: "tester@example.com",
       mode: "subscription",
       line_items: [{ price: PRICE_ID, quantity: 1 }],
-      success_url: "https://agent-beta.onrender.com/success?session_id={CHECKOUT_SESSION_ID}",
+     success_url: "https://agent-beta.onrender.com/post-checkout?session_id={CHECKOUT_SESSION_ID}",
+
       cancel_url: "https://agent-beta.onrender.com/cancel",
     });
     console.log("Checkout session created:", session.id, session.url);
