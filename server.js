@@ -278,8 +278,7 @@ app.get("/create-checkout-session", async (_req, res) => {
       customer_email: "tester@example.com",
       mode: "subscription",
       line_items: [{ price: PRICE_ID, quantity: 1 }],
-     success_url: "https://agent-beta.onrender.com/post-checkout?session_id={CHECKOUT_SESSION_ID}",
-
+      success_url: "https://agent-beta.onrender.com/post-checkout?session_id={CHECKOUT_SESSION_ID}",
       cancel_url: "https://agent-beta.onrender.com/cancel",
     });
     console.log("Checkout session created:", session.id, session.url);
@@ -287,19 +286,6 @@ app.get("/create-checkout-session", async (_req, res) => {
   } catch (err) {
     console.error("Error creating session:", err.message);
     return res.status(500).json({ error: err.message });
-  }
-});
-
-// ===== SUCCESS LOOKUP =====
-app.get("/session-status", async (req, res) => {
-  const sessionId = req.query.session_id;
-  try {
-    const session = await stripe.checkout.sessions.retrieve(sessionId, {
-      expand: ["subscription", "customer"],
-    });
-    res.json(session);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
   }
 });
 
