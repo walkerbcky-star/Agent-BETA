@@ -362,8 +362,9 @@ app.get("/user-info/:email", async (req, res) => {
   const email = req.params.email;
 
   try {
-        const result = await pool.query(
-      `SELECT email, name, stripe_customer_id, is_subscriber FROM users WHERE email=$1 LIMIT 1`,
+    const result = await pool.query(
+      `SELECT email, name, api_token, stripe_customer_id, is_subscriber 
+       FROM users WHERE email=$1 LIMIT 1`,
       [email]
     );
 
@@ -372,14 +373,12 @@ app.get("/user-info/:email", async (req, res) => {
     }
 
     const user = result.rows[0];
-res.json({
-  name: user.name || user.email.split("@")[0],
-  email: user.email,
-  token: user.api_token
-});
-
-
-
+    res.json({
+      name: user.name || user.email.split("@")[0],
+      email: user.email,
+      token: user.api_token,
+      is_subscriber: user.is_subscriber
+    });
   } catch (err) {
     console.error("User lookup error:", err.message);
     res.status(500).json({ error: "Server error" });
