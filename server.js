@@ -106,6 +106,9 @@ app.post(
 
         console.log(`Checkout completed → ${email}, customer: ${customerId}, sub: ${subscriptionId}`);
 
+const crypto = await import("crypto");
+const apiToken = crypto.randomBytes(16).toString("hex");
+
         const result = await pool.query(
           `INSERT INTO users (email, name, stripe_customer_id, stripe_subscription_id, is_subscriber)
            VALUES ($1, $2, $3, $4, true)
@@ -305,12 +308,12 @@ app.get("/debug-prices", async (_req, res) => {
 
 // ===== CHAT ENDPOINT WITH SUBSCRIPTION CHECK =====
 app.post("/chat", async (req, res) => {
-  const { message, email } = req.body; // user must send their email with the request
+  const { message, email, token } = req.body; // user must send email + token with the request
 
   try {
     // 1. Look up user in DB
     const result = await pool.query(
-      `SELECT is_subscriber FROM users WHERE email = $1 LIMIT 1`,
+      "SELECT is_subscriber, api_token FROM users WHERE email=$1 LIMIT 1",
       [email]
     );
 
@@ -318,7 +321,11 @@ app.post("/chat", async (req, res) => {
       return res.status(403).json({ error: "Subscription required to use this service." });
     }
 
-    // 2. User is a subscriber → call OpenAI
+    if (result.rows[0].api_token !== token) {
+      return res.status(403).json({ error: "Invalid token." });
+    }
+
+    // 2. User is a subscriber with valid token → call OpenAI
     const response = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
       headers: {
