@@ -127,7 +127,7 @@ app.get("/user-info/:email", async (req, res) => {
   const { email } = req.params;
   try {
     const result = await pool.query(
-      "SELECT name, is_subscriber FROM users WHERE email=$1",
+      "SELECT name, is_subscriber, api_token FROM users WHERE email=$1",
       [email]
     );
     if (result.rows.length === 0) {
@@ -149,7 +149,7 @@ app.get("/chat.html", (req, res) => {
   res.sendFile(path.join(__dirname, "public", "chat.html"));
 });
 
-app.get("/chat-ui/:email", async (req, res) => {
+app.get("/chat-ui/:email", (req, res) => {
   res.sendFile(path.join(__dirname, "public", "chat.html"));
 });
 
