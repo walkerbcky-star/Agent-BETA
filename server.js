@@ -143,12 +143,14 @@ app.get("/user-info/:email", async (req, res) => {
 // ===== STRIPE CHECKOUT SESSION =====
 app.post("/create-checkout-session", async (req, res) => {
   try {
+    console.log("🟢 Using BASE_URL:", process.env.BASE_URL);
+
     const session = await stripe.checkout.sessions.create({
       mode: "subscription",
       payment_method_types: ["card"],
       line_items: [
         {
-          price: process.env.STRIPE_PRICE_ID, // your Stripe Price ID from env
+          price: process.env.STRIPE_PRICE_ID,
           quantity: 1,
         },
       ],
@@ -156,12 +158,14 @@ app.post("/create-checkout-session", async (req, res) => {
       cancel_url: `${process.env.BASE_URL}/cancel`,
     });
 
+    console.log("✅ Session created:", session.id);
     res.json({ url: session.url });
   } catch (err) {
     console.error("❌ Error creating checkout session:", err);
     res.status(500).json({ error: "Failed to create checkout session" });
   }
 });
+
 
 // ===== STATIC PAGES =====
 app.get("/login.html", (req, res) => {
