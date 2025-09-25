@@ -141,15 +141,17 @@ app.get("/user-info/:email", async (req, res) => {
 });
 
 // ===== STATIC PAGES =====
-app.get("/login.html", (req, res) => {
-  res.sendFile(path.join(__dirname, "public", "login.html"));
+
+// Root → redirect to login
+app.get("/", (req, res) => {
+  res.redirect("/login.html");
 });
 
-app.get("/chat.html", (req, res) => {
-  res.sendFile(path.join(__dirname, "public", "chat.html"));
-});
+// Static files (login.html, chat.html, css, js, etc.)
+app.use(express.static(path.join(__dirname, "public")));
 
-app.get("/chat-ui/:email", async (req, res) => {
+// Personalised chat UI
+app.get("/chat-ui/:email", (req, res) => {
   res.sendFile(path.join(__dirname, "public", "chat.html"));
 });
 
