@@ -18,7 +18,7 @@
   </style>
 </head>
 <body>
-  <h2>Welcome back, <span id="username"></span></h2>
+  <h2 id="welcomeMessage">Welcome to the Chat</h2>
   <div id="chat-box"></div>
   <input type="text" id="message" placeholder="Type your message..." />
   <button onclick="sendMessage()">Send</button>
@@ -27,10 +27,34 @@
   <button onclick="backToLogin()">Back to Login</button>
 
   <script>
-    const email = localStorage.getItem("email");
-    const token = localStorage.getItem("token");
-    const username = localStorage.getItem("name");
-    document.getElementById("username").textContent = username || "User";
+    const pathParts = window.location.pathname.split("/");
+    const email = decodeURIComponent(pathParts[pathParts.length - 1]) || localStorage.getItem("userEmail");
+    let token = localStorage.getItem("userToken");
+    let username = localStorage.getItem("userName");
+
+    async function loadUser() {
+      if (email) {
+        try {
+          const res = await fetch(`/user-info/${encodeURIComponent(email)}`);
+          const data = await res.json();
+          if (!data.error) {
+            username = data.name;
+            token = data.api_token;
+            localStorage.setItem("userName", username);
+            localStorage.setItem("userToken", token);
+            localStorage.setItem("userEmail", email);
+            document.getElementById("welcomeMessage").textContent = `Welcome back, ${username}`;
+          }
+        } catch (err) {
+          console.error("❌ Failed to fetch user info:", err);
+        }
+      }
+      if (!username) {
+        document.getElementById("welcomeMessage").textContent = "Welcome to the Chat";
+      }
+    }
+
+    loadUser();
 
     async function sendMessage() {
       const input = document.getElementById("message");
@@ -38,7 +62,6 @@
       const message = input.value.trim();
       if (!message) return;
 
-      // show user message
       chatBox.innerHTML += `<div class="user"><strong>You:</strong> ${message}</div>`;
       input.value = "";
 
@@ -64,12 +87,17 @@
       chatBox.scrollTop = chatBox.scrollHeight;
     }
 
-    function logout() {
-      localStorage.removeItem("email");
-      localStorage.removeItem("token");
-      localStorage.removeItem("name");
-      window.location.href = "/login.html";
-    }
+   function logout() {
+  // Clear all localStorage keys that might have been used
+  localStorage.removeItem("userEmail");
+  localStorage.removeItem("userToken");
+  localStorage.removeItem("userName");
+  localStorage.removeItem("email");
+  localStorage.removeItem("token");
+  localStorage.removeItem("name");
+
+  window.location.href = "/login.html";
+}
 
     function backToLogin() {
       window.location.href = "/login.html";

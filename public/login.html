@@ -26,12 +26,15 @@
   </div>
 
   <script>
-    // Check if user already has email + token saved
+    // Clean up any old key names to avoid conflicts
+    localStorage.removeItem("email");
+    localStorage.removeItem("token");
+    localStorage.removeItem("name");
+
     const savedEmail = localStorage.getItem("userEmail");
     const savedToken = localStorage.getItem("userToken");
 
     if (savedEmail && savedToken) {
-      // Hide the form, show quick access
       document.getElementById("loginForm").style.display = "none";
       document.getElementById("quickAccess").style.display = "block";
 
@@ -39,7 +42,6 @@
         window.location.href = `/chat-ui/${encodeURIComponent(savedEmail)}`;
       });
     } else {
-      // Normal login flow
       document.getElementById("loginForm").addEventListener("submit", async (e) => {
         e.preventDefault();
         const email = document.getElementById("emailInput").value;
@@ -51,7 +53,8 @@
           document.getElementById("error").textContent = "Not a subscriber. Please sign up first.";
         } else {
           localStorage.setItem("userEmail", email);
-          localStorage.setItem("userToken", data.token);
+          localStorage.setItem("userToken", data.api_token);
+          localStorage.setItem("userName", data.name);
           window.location.href = `/chat-ui/${encodeURIComponent(email)}`;
         }
       });
