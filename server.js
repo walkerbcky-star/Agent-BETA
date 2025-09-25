@@ -130,17 +130,14 @@ app.get("/user-info/:email", async (req, res) => {
       "SELECT name, is_subscriber, api_token FROM users WHERE email=$1",
       [email]
     );
-   if (result.rows.length === 0) {
-  return res.status(404).json({ error: "User not found" });
-}
-const user = result.rows[0];
-const displayName = user.name && user.name.trim() !== "" 
-  ? user.name 
-  : user.email.split("@")[0];  // fallback
-res.json({
-  name: displayName,
-  is_subscriber: user.is_subscriber,
-  api_token: user.api_token
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: "User not found" });
+    }
+    res.json(result.rows[0]);
+  } catch (err) {
+    console.error("❌ User info error:", err);
+    res.status(500).json({ error: "Failed to fetch user info" });
+  }
 });
 
 
