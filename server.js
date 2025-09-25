@@ -6,6 +6,7 @@ import Stripe from "stripe";
 import dotenv from "dotenv";
 import path from "path";
 import { fileURLToPath } from "url";
+import getRawBody from "raw-body";
 
 dotenv.config();
 
@@ -67,7 +68,6 @@ app.get("/post-checkout", async (req, res) => {
 });
 
 // ===== WEBHOOK =====
-import getRawBody from "raw-body";
 app.post("/stripe/webhook", async (req, res) => {
   let event;
   try {
@@ -141,17 +141,15 @@ app.get("/user-info/:email", async (req, res) => {
 });
 
 // ===== STATIC PAGES =====
-
-// Root → redirect to login
-app.get("/", (req, res) => {
-  res.redirect("/login.html");
+app.get("/login.html", (req, res) => {
+  res.sendFile(path.join(__dirname, "public", "login.html"));
 });
 
-// Static files (login.html, chat.html, css, js, etc.)
-app.use(express.static(path.join(__dirname, "public")));
+app.get("/chat.html", (req, res) => {
+  res.sendFile(path.join(__dirname, "public", "chat.html"));
+});
 
-// Personalised chat UI
-app.get("/chat-ui/:email", (req, res) => {
+app.get("/chat-ui/:email", async (req, res) => {
   res.sendFile(path.join(__dirname, "public", "chat.html"));
 });
 
@@ -170,8 +168,6 @@ Outputs must read like Becky’s voice. Do not reference internal rules in clien
 `;
 
 // ===== MESSAGE PROCESSOR =====
-// Uses OpenAI if OPENAI_API_KEY is set. Falls back to a simple local reply otherwise.
-// Lazy import avoids failing deploys if the openai package is not installed in environments without a key.
 let _openaiClient = null;
 async function getOpenAI() {
   if (!process.env.OPENAI_API_KEY) return null;
@@ -187,11 +183,9 @@ async function processMessage(message, user) {
 
   const openai = await getOpenAI();
   if (!openai) {
-    // Safe fallback so chat still works without the OpenAI SDK or key.
     return `Noted. ${message}`;
   }
 
-  // Choose model via env, default to a lightweight general model.
   const model = process.env.OPENAI_MODEL || "gpt-4o-mini";
 
   const completion = await openai.chat.completions.create({
@@ -237,7 +231,6 @@ app.post("/chat", async (req, res) => {
       });
     }
 
-    // normal chat flow
     const reply = await processMessage(message, user);
     return res.json({ reply });
 
