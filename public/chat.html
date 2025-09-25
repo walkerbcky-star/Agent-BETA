@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Chat</title>
+  <style>
+    #chat-box {
+      max-height: 400px;
+      overflow-y: auto;
+      padding: 10px;
+      border: 1px solid #ccc;
+      margin-bottom: 10px;
+      font-family: sans-serif;
+      background: #fafafa;
+    }
+    .user { color: #333; margin: 5px 0; }
+    .bot { color: #0066cc; margin: 5px 0; }
+    .error { color: #cc0000; margin: 5px 0; font-weight: bold; }
+  </style>
+</head>
+<body>
+  <h2>Welcome back, <span id="username"></span></h2>
+  <div id="chat-box"></div>
+  <input type="text" id="message" placeholder="Type your message..." />
+  <button onclick="sendMessage()">Send</button>
+  <br><br>
+  <button onclick="logout()">Logout</button>
+  <button onclick="backToLogin()">Back to Login</button>
+
+  <script>
+    const email = localStorage.getItem("email");
+    const token = localStorage.getItem("token");
+    const username = localStorage.getItem("name");
+    document.getElementById("username").textContent = username || "User";
+
+    async function sendMessage() {
+      const input = document.getElementById("message");
+      const chatBox = document.getElementById("chat-box");
+      const message = input.value.trim();
+      if (!message) return;
+
+      // show user message
+      chatBox.innerHTML += `<div class="user"><strong>You:</strong> ${message}</div>`;
+      input.value = "";
+
+      try {
+        const res = await fetch("/chat", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email, token, message })
+        });
+
+        const data = await res.json();
+
+        if (data.error) {
+          chatBox.innerHTML += `<div class="error"><strong>Error:</strong> ${data.error}</div>`;
+        } else if (data.reply) {
+          chatBox.innerHTML += `<div class="bot"><strong>Agent:</strong> ${data.reply}</div>`;
+        }
+      } catch (err) {
+        console.error("❌ Chat request failed:", err);
+        chatBox.innerHTML += `<div class="error"><strong>Error:</strong> Network issue. Please try again.</div>`;
+      }
+
+      chatBox.scrollTop = chatBox.scrollHeight;
+    }
+
+    function logout() {
+      localStorage.removeItem("email");
+      localStorage.removeItem("token");
+      localStorage.removeItem("name");
+      window.location.href = "/login.html";
+    }
+
+    function backToLogin() {
+      window.location.href = "/login.html";
+    }
+  </script>
+</body>
+</html>

@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Subscriber Login</title>
+  <style>
+    body { font-family: sans-serif; margin: 2rem; }
+    form { display: flex; flex-direction: column; max-width: 300px; }
+    input { margin-bottom: 1rem; padding: 0.5rem; }
+    button { padding: 0.5rem; margin-top: 0.5rem; }
+    #error { color: red; margin-top: 1rem; }
+  </style>
+</head>
+<body>
+  <h1>Login</h1>
+
+  <form id="loginForm">
+    <input type="email" id="emailInput" placeholder="Enter your email" required />
+    <button type="submit">Go to Chat</button>
+  </form>
+  <div id="error"></div>
+
+  <div id="quickAccess" style="display: none;">
+    <p>You’re already logged in.</p>
+    <button id="goChatBtn">Go to Chat</button>
+  </div>
+
+  <script>
+    // Check if user already has email + token saved
+    const savedEmail = localStorage.getItem("userEmail");
+    const savedToken = localStorage.getItem("userToken");
+
+    if (savedEmail && savedToken) {
+      // Hide the form, show quick access
+      document.getElementById("loginForm").style.display = "none";
+      document.getElementById("quickAccess").style.display = "block";
+
+      document.getElementById("goChatBtn").addEventListener("click", () => {
+        window.location.href = `/chat-ui/${encodeURIComponent(savedEmail)}`;
+      });
+    } else {
+      // Normal login flow
+      document.getElementById("loginForm").addEventListener("submit", async (e) => {
+        e.preventDefault();
+        const email = document.getElementById("emailInput").value;
+
+        const res = await fetch(`/user-info/${encodeURIComponent(email)}`);
+        const data = await res.json();
+
+        if (data.error || !data.is_subscriber) {
+          document.getElementById("error").textContent = "Not a subscriber. Please sign up first.";
+        } else {
+          localStorage.setItem("userEmail", email);
+          localStorage.setItem("userToken", data.token);
+          window.location.href = `/chat-ui/${encodeURIComponent(email)}`;
+        }
+      });
+    }
+  </script>
+</body>
+</html>
