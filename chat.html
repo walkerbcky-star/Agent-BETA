@@ -7,12 +7,16 @@
     body { font-family: sans-serif; margin: 2rem; }
     #chatForm { margin-bottom: 1rem; }
     #chatInput { width: 70%; padding: 0.5rem; }
-    button { padding: 0.5rem 1rem; }
+    button { padding: 0.5rem 1rem; margin-left: 0.5rem; }
     #chatReply { white-space: pre-wrap; background: #f4f4f4; padding: 1rem; border-radius: 5px; }
+    #topBar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; }
   </style>
 </head>
 <body>
-  <h1 id="welcomeMessage">Welcome to the Chat</h1>
+  <div id="topBar">
+    <h1 id="welcomeMessage">Welcome to the Chat</h1>
+    <button id="logoutBtn">Logout</button>
+  </div>
 
   <form id="chatForm">
     <input type="text" id="chatInput" placeholder="Type your message..." required />
@@ -41,6 +45,13 @@
       .catch(() => {
         document.getElementById("welcomeMessage").textContent = "Welcome to the Chat";
       });
+
+    // Logout button → clear storage and send to login page
+    document.getElementById("logoutBtn").addEventListener("click", () => {
+      localStorage.removeItem("userEmail");
+      localStorage.removeItem("userToken");
+      window.location.href = "/login";
+    });
 
     const chatForm = document.getElementById("chatForm");
     const chatInput = document.getElementById("chatInput");
