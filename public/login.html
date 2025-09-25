@@ -26,7 +26,7 @@
   </div>
 
   <script>
-    // Clean up any old key names to avoid conflicts
+    // Clean up any old key names
     localStorage.removeItem("email");
     localStorage.removeItem("token");
     localStorage.removeItem("name");
@@ -35,6 +35,7 @@
     const savedToken = localStorage.getItem("userToken");
 
     if (savedEmail && savedToken) {
+      // Quick access flow
       document.getElementById("loginForm").style.display = "none";
       document.getElementById("quickAccess").style.display = "block";
 
@@ -42,20 +43,37 @@
         window.location.href = `/chat-ui/${encodeURIComponent(savedEmail)}`;
       });
     } else {
+      // Normal login flow
       document.getElementById("loginForm").addEventListener("submit", async (e) => {
         e.preventDefault();
         const email = document.getElementById("emailInput").value;
 
-        const res = await fetch(`/user-info/${encodeURIComponent(email)}`);
-        const data = await res.json();
+        try {
+          const res = await fetch(`/user-info/${encodeURIComponent(email)}`);
+          const data = await res.json();
 
-        if (data.error || !data.is_subscriber) {
-          document.getElementById("error").textContent = "Not a subscriber. Please sign up first.";
-        } else {
-          localStorage.setItem("userEmail", email);
-          localStorage.setItem("userToken", data.api_token);
-          localStorage.setItem("userName", data.name);
-          window.location.href = `/chat-ui/${encodeURIComponent(email)}`;
+          if (data.error || !data.is_subscriber) {
+            // Unknown or unsubscribed user → friendly message + subscribe button
+            document.getElementById("error").innerHTML = `
+              Hey, it appears we don't know you yet. Either check the email you entered or subscribe for access.<br>
+              <button id="subscribeBtn">Subscribe</button>
+            `;
+
+            document.getElementById("subscribeBtn").addEventListener("click", async () => {
+              const checkoutRes = await fetch("/create-checkout-session", { method: "POST" });
+              const { url } = await checkoutRes.json();
+              window.location.href = url;
+            });
+          } else {
+            // Valid subscriber → save details and redirect
+            localStorage.setItem("userEmail", email);
+            localStorage.setItem("userToken", data.api_token);
+            localStorage.setItem("userName", data.name);
+            window.location.href = `/chat-ui/${encodeURIComponent(email)}`;
+          }
+        } catch (err) {
+          console.error("❌ Login error:", err);
+          document.getElementById("error").textContent = "Server error. Please try again.";
         }
       });
     }
