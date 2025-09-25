@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Subscriber Login</title>
+  <style>
+    body { font-family: sans-serif; margin: 2rem; }
+    form { display: flex; flex-direction: column; max-width: 300px; }
+    input { margin-bottom: 1rem; padding: 0.5rem; }
+    button { padding: 0.5rem; }
+    #error { color: red; margin-top: 1rem; }
+  </style>
+</head>
+<body>
+  <h1>Login</h1>
+  <form id="loginForm">
+    <input type="email" id="emailInput" placeholder="Enter your email" required />
+    <button type="submit">Go to Chat</button>
+  </form>
+  <div id="error"></div>
+
+  <script>
+    document.getElementById("loginForm").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const email = document.getElementById("emailInput").value;
+
+      const res = await fetch(`/user-info/${encodeURIComponent(email)}`);
+      const data = await res.json();
+
+      if (data.error || !data.is_subscriber) {
+        document.getElementById("error").textContent = "Not a subscriber. Please sign up first.";
+      } else {
+        window.location.href = `/chat-ui/${encodeURIComponent(email)}`;
+      }
+    });
+  </script>
+</body>
+</html>

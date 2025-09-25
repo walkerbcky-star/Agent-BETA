@@ -247,6 +247,10 @@ app.use(bodyParser.json());
 app.get("/", (_req, res) => res.sendFile(path.join(__dirname, "subscribe.html")));
 app.get("/success", (_req, res) => res.sendFile(path.join(__dirname, "success.html")));
 app.get("/cancel", (_req, res) => res.sendFile(path.join(__dirname, "subscribe.html")));
+app.get("/login", (_req, res) =>
+  res.sendFile(path.join(__dirname, "login.html"))
+);
+
 
 // New: redirect after Stripe checkout
 app.get("/post-checkout", async (req, res) => {
