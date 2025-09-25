@@ -10,12 +10,16 @@
     button { padding: 0.5rem 1rem; margin-left: 0.5rem; }
     #chatReply { white-space: pre-wrap; background: #f4f4f4; padding: 1rem; border-radius: 5px; }
     #topBar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; }
+    #buttonGroup { display: flex; gap: 0.5rem; }
   </style>
 </head>
 <body>
   <div id="topBar">
     <h1 id="welcomeMessage">Welcome to the Chat</h1>
-    <button id="logoutBtn">Logout</button>
+    <div id="buttonGroup">
+      <button id="backLoginBtn">Back to Login</button>
+      <button id="logoutBtn">Logout</button>
+    </div>
   </div>
 
   <form id="chatForm">
@@ -45,6 +49,11 @@
       .catch(() => {
         document.getElementById("welcomeMessage").textContent = "Welcome to the Chat";
       });
+
+    // Back to Login button → go to login page (keep storage)
+    document.getElementById("backLoginBtn").addEventListener("click", () => {
+      window.location.href = "/login";
+    });
 
     // Logout button → clear storage and send to login page
     document.getElementById("logoutBtn").addEventListener("click", () => {
