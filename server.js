@@ -21,6 +21,64 @@ const pool = new pg.Pool({
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 
+// ===== STRIPE WEBHOOK =====
+// Must come BEFORE bodyParser.json()
+app.post("/stripe/webhook", async (req, res) => {
+  let event;
+  try {
+    const rawBody = await getRawBody(req);
+    const sig = req.headers["stripe-signature"];
+    event = stripe.webhooks.constructEvent(
+      rawBody,
+      sig,
+      process.env.STRIPE_WEBHOOK_SECRET
+    );
+    console.log("✅ Stripe event received:", event.type);
+  } catch (err) {
+    console.error("❌ Webhook signature verification failed:", err.message);
+    return res.sendStatus(400);
+  }
+
+  try {
+    switch (event.type) {
+      case "checkout.session.completed": {
+        const session = event.data.object;
+        const customer = await stripe.customers.retrieve(session.customer);
+        await pool.query(
+          `INSERT INTO users (email, name, is_subscriber, api_token)
+           VALUES ($1, $2, true, $3)
+           ON CONFLICT (email) DO UPDATE
+           SET is_subscriber=true, name=$2, api_token=$3`,
+          [customer.email, customer.name, Math.random().toString(36).slice(2)]
+        );
+        break;
+      }
+      case "customer.subscription.deleted": {
+        const sub = event.data.object;
+        const cust = await stripe.customers.retrieve(sub.customer);
+        await pool.query(
+          "UPDATE users SET is_subscriber=false WHERE email=$1",
+          [cust.email]
+        );
+        break;
+      }
+      case "invoice.paid":
+        console.log("✅ Invoice paid");
+        break;
+      case "invoice.payment_failed":
+        console.log("❌ Invoice payment failed");
+        break;
+      default:
+        console.log("Unhandled event type:", event.type);
+    }
+    res.sendStatus(200);
+  } catch (err) {
+    console.error("❌ Webhook error:", err);
+    res.sendStatus(500);
+  }
+});
+
+// ===== MIDDLEWARE =====
 app.use(bodyParser.json());
 app.use(express.static("public"));
 
@@ -67,61 +125,6 @@ app.get("/post-checkout", async (req, res) => {
   }
 });
 
-// ===== WEBHOOK =====
-app.post("/stripe/webhook", async (req, res) => {
-  let event;
-  try {
-    const rawBody = await getRawBody(req);
-    const sig = req.headers["stripe-signature"];
-    event = stripe.webhooks.constructEvent(
-      rawBody,
-      sig,
-      process.env.STRIPE_WEBHOOK_SECRET
-    );
-  } catch (err) {
-    console.error("❌ Webhook signature verification failed:", err.message);
-    return res.sendStatus(400);
-  }
-
-  try {
-    switch (event.type) {
-      case "checkout.session.completed": {
-        const session = event.data.object;
-        const customer = await stripe.customers.retrieve(session.customer);
-        await pool.query(
-          `INSERT INTO users (email, name, is_subscriber, api_token)
-           VALUES ($1, $2, true, $3)
-           ON CONFLICT (email) DO UPDATE
-           SET is_subscriber=true, name=$2, api_token=$3`,
-          [customer.email, customer.name, Math.random().toString(36).slice(2)]
-        );
-        break;
-      }
-      case "customer.subscription.deleted": {
-        const sub = event.data.object;
-        const cust = await stripe.customers.retrieve(sub.customer);
-        await pool.query(
-          "UPDATE users SET is_subscriber=false WHERE email=$1",
-          [cust.email]
-        );
-        break;
-      }
-      case "invoice.paid":
-        console.log("✅ Invoice paid");
-        break;
-      case "invoice.payment_failed":
-        console.log("❌ Invoice payment failed");
-        break;
-      default:
-        console.log("Unhandled event type:", event.type);
-    }
-    res.sendStatus(200);
-  } catch (err) {
-    console.error("❌ Webhook error:", err);
-    res.sendStatus(500);
-  }
-});
-
 // ===== USER INFO =====
 app.get("/user-info/:email", async (req, res) => {
   const { email } = req.params;
@@ -140,7 +143,7 @@ app.get("/user-info/:email", async (req, res) => {
   }
 });
 
-// ===== STRIPE CHECKOUT SESSION =====
+// ===== STRIPE CHECKOUT SESSION (debug) =====
 app.post("/create-checkout-session", async (req, res) => {
   try {
     console.log("🟢 Using BASE_URL:", process.env.BASE_URL);
@@ -165,7 +168,6 @@ app.post("/create-checkout-session", async (req, res) => {
     res.status(500).json({ error: "Failed to create checkout session" });
   }
 });
-
 
 // ===== STATIC PAGES =====
 app.get("/login.html", (req, res) => {
