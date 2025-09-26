@@ -31,7 +31,7 @@ app.post("/stripe/webhook", async (req, res) => {
     event = stripe.webhooks.constructEvent(
       rawBody,
       sig,
-      process.env.STRIPE_WEBHOOK_SECRET
+      process.env.STRIPE_SIGNING_SECRET   // <<< changed here
     );
     console.log("✅ Stripe event received:", event.type);
   } catch (err) {
