@@ -31,7 +31,7 @@ app.post("/stripe/webhook", async (req, res) => {
     event = stripe.webhooks.constructEvent(
       rawBody,
       sig,
-      process.env.STRIPE_SIGNING_SECRET   // <<< changed here
+      process.env.STRIPE_SIGNING_SECRET
     );
     console.log("✅ Stripe event received:", event.type);
   } catch (err) {
@@ -85,17 +85,26 @@ app.use(express.static("public"));
 // ===== STRIPE CHECKOUT =====
 app.post("/create-checkout-session", async (req, res) => {
   try {
+    console.log("🟢 Using BASE_URL:", process.env.BASE_URL);
+
     const session = await stripe.checkout.sessions.create({
-      payment_method_types: ["card"],
       mode: "subscription",
-      line_items: [{ price: process.env.STRIPE_PRICE_ID, quantity: 1 }],
+      payment_method_types: ["card"],
+      line_items: [
+        {
+          price: process.env.STRIPE_PRICE_ID,
+          quantity: 1,
+        },
+      ],
       success_url: `${process.env.BASE_URL}/post-checkout?session_id={CHECKOUT_SESSION_ID}`,
-      cancel_url: `${process.env.BASE_URL}/login.html`
+      cancel_url: `${process.env.BASE_URL}/login.html`,
     });
+
+    console.log("✅ Session created:", session.id);
     res.json({ url: session.url });
   } catch (err) {
     console.error("❌ Error creating checkout session:", err);
-    res.status(500).send("Unable to create checkout session");
+    res.status(500).json({ error: "Failed to create checkout session" });
   }
 });
 
@@ -140,32 +149,6 @@ app.get("/user-info/:email", async (req, res) => {
   } catch (err) {
     console.error("❌ User info error:", err);
     res.status(500).json({ error: "Failed to fetch user info" });
-  }
-});
-
-// ===== STRIPE CHECKOUT SESSION (debug) =====
-app.post("/create-checkout-session", async (req, res) => {
-  try {
-    console.log("🟢 Using BASE_URL:", process.env.BASE_URL);
-
-    const session = await stripe.checkout.sessions.create({
-      mode: "subscription",
-      payment_method_types: ["card"],
-      line_items: [
-        {
-          price: process.env.STRIPE_PRICE_ID,
-          quantity: 1,
-        },
-      ],
-      success_url: `${process.env.BASE_URL}/success?session_id={CHECKOUT_SESSION_ID}`,
-      cancel_url: `${process.env.BASE_URL}/cancel`,
-    });
-
-    console.log("✅ Session created:", session.id);
-    res.json({ url: session.url });
-  } catch (err) {
-    console.error("❌ Error creating checkout session:", err);
-    res.status(500).json({ error: "Failed to create checkout session" });
   }
 });
 
