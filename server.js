@@ -21,7 +21,7 @@ const pool = new pg.Pool({
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 
-// Ensure required tables exist at runtime. Safe to call on every boot.
+// ===== TABLE CREATION (deferred) =====
 async function ensureTables() {
   await pool.query(`
     CREATE TABLE IF NOT EXISTS users (
@@ -54,8 +54,9 @@ async function ensureTables() {
       sample_count INT DEFAULT 0
     );
   `);
+
+  console.log("Tables ensured");
 }
-ensureTables().catch(e => console.error("Table init error:", e));
 
 // ===== STRIPE WEBHOOK =====
 // Must come BEFORE bodyParser.json()
@@ -69,9 +70,9 @@ app.post("/stripe/webhook", async (req, res) => {
       sig,
       process.env.STRIPE_SIGNING_SECRET
     );
-    console.log("✅ Stripe event received:", event.type);
+    console.log("Stripe event:", event.type);
   } catch (err) {
-    console.error("❌ Webhook signature verification failed:", err.message);
+    console.error("Webhook signature verification failed:", err.message);
     return res.sendStatus(400);
   }
 
@@ -87,7 +88,6 @@ app.post("/stripe/webhook", async (req, res) => {
            SET is_subscriber=true, name=$2, api_token=$3`,
           [customer.email, customer.name, Math.random().toString(36).slice(2)]
         );
-        // Create blank user_state on first subscription
         await pool.query(
           `INSERT INTO user_state (email) VALUES ($1)
            ON CONFLICT (email) DO NOTHING`,
@@ -105,17 +105,17 @@ app.post("/stripe/webhook", async (req, res) => {
         break;
       }
       case "invoice.paid":
-        console.log("✅ Invoice paid");
+        console.log("Invoice paid");
         break;
       case "invoice.payment_failed":
-        console.log("❌ Invoice payment failed");
+        console.log("Invoice payment failed");
         break;
       default:
         console.log("Unhandled event type:", event.type);
     }
     res.sendStatus(200);
   } catch (err) {
-    console.error("❌ Webhook error:", err);
+    console.error("Webhook error:", err);
     res.sendStatus(500);
   }
 });
@@ -123,6 +123,10 @@ app.post("/stripe/webhook", async (req, res) => {
 // ===== MIDDLEWARE =====
 app.use(bodyParser.json());
 app.use(express.static("public"));
+
+// Health and root routes for reliability
+app.get("/healthz", (req, res) => res.status(200).send("ok"));
+app.get("/", (req, res) => res.redirect("/login.html"));
 
 // ===== VOICE RULES =====
 const GLOBAL_RULES = `
@@ -224,12 +228,8 @@ async function getOpenAI() {
 
 // ===== MINI UTILITIES =====
 function scrubOutput(raw, banned = []) {
-  // Replace em dashes with colon to enforce rule
-  let text = String(raw || "").replace(/\u2014/g, ":");
-  // Replace double spaces
+  let text = String(raw || "").replace(/\u2014/g, ":"); // kill em dash
   text = text.replace(/ {2,}/g, " ");
-
-  // Very light ban filter: remove exact banned words
   if (Array.isArray(banned) && banned.length) {
     const pattern = new RegExp(`\\b(${banned.map(w => w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|")})\\b`, "gi");
     text = text.replace(pattern, "");
@@ -358,7 +358,6 @@ NO-SALES SWITCH
 
   const openai = await getOpenAI();
   if (!openai) {
-    // Fallback if no API key
     return `Noted. ${message}`;
   }
 
@@ -417,25 +416,22 @@ async function getVoice(email) {
 // ===== STRIPE CHECKOUT =====
 app.post("/create-checkout-session", async (req, res) => {
   try {
-    console.log("🟢 Using BASE_URL:", process.env.BASE_URL);
+    console.log("Using BASE_URL:", process.env.BASE_URL);
 
     const session = await stripe.checkout.sessions.create({
       mode: "subscription",
       payment_method_types: ["card"],
       line_items: [
-        {
-          price: process.env.STRIPE_PRICE_ID,
-          quantity: 1,
-        },
+        { price: process.env.STRIPE_PRICE_ID, quantity: 1 }
       ],
       success_url: `${process.env.BASE_URL}/post-checkout?session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: `${process.env.BASE_URL}/login.html`,
     });
 
-    console.log("✅ Session created:", session.id);
+    console.log("Session created:", session.id);
     res.json({ url: session.url });
   } catch (err) {
-    console.error("❌ Error creating checkout session:", err);
+    console.error("Error creating checkout session:", err);
     res.status(500).json({ error: "Failed to create checkout session" });
   }
 });
@@ -467,7 +463,7 @@ app.get("/post-checkout", async (req, res) => {
 
     res.redirect(`/chat-ui/${encodeURIComponent(email)}`);
   } catch (err) {
-    console.error("❌ Post-checkout error:", err);
+    console.error("Post-checkout error:", err);
     res.status(500).send("Post-checkout failed");
   }
 });
@@ -485,13 +481,12 @@ app.get("/user-info/:email", async (req, res) => {
     }
     res.json(result.rows[0]);
   } catch (err) {
-    console.error("❌ User info error:", err);
+    console.error("User info error:", err);
     res.status(500).json({ error: "Failed to fetch user info" });
   }
 });
 
-// ===== VOICE ENDPOINTS =====
-// Optional text samples upload, hands-off mode works without this.
+// ===== OPTIONAL VOICE ENDPOINTS =====
 app.post("/voice/samples", async (req, res) => {
   const { email, token, texts = [] } = req.body || {};
   try {
@@ -563,17 +558,15 @@ app.get("/chat-ui/:email", (req, res) => {
 // ===== CHAT COMMAND PARSER =====
 function parseCommand(raw) {
   const msg = String(raw || "").trim();
-
-  // Simple exact commands
   const exact = msg.toUpperCase();
+
   if (exact === "STOP") return { type: "STOP" };
   if (exact === "MENU") return { type: "MENU" };
   if (exact === "MENU AGAIN") return { type: "MENU_AGAIN" };
   if (exact.startsWith("REVIEW AVATAR")) return { type: "REVIEW_AVATAR" };
 
-  // Assignment commands
   if (exact.startsWith("AVATAR")) {
-    const payload = msg.slice(6).trim(); // text after AVATAR
+    const payload = msg.slice(6).trim();
     return { type: "SET_AVATAR", payload };
   }
   if (exact.startsWith("MY PROFILE")) {
@@ -607,11 +600,11 @@ app.post("/chat", async (req, res) => {
       });
     }
 
-    // Fetch state and voice once
+    // Fetch state and voice
     let state = await getState(email);
     let voice = await getVoice(email);
 
-    // Passive learning from the way the user writes
+    // Passive learning from user phrasing
     maybeLearnFromChat(email, message);
 
     // Parse commands before model call
@@ -619,7 +612,7 @@ app.post("/chat", async (req, res) => {
     if (cmd) {
       switch (cmd.type) {
         case "STOP":
-          // Will be handled by drafting with current info. Fall through to draft with current message stripped.
+          // handled below by immediate draft
           break;
 
         case "MENU":
@@ -642,7 +635,6 @@ app.post("/chat", async (req, res) => {
         case "SET_AVATAR": {
           let avatarObj = {};
           try {
-            // Try JSON first, else store as a single-field summary
             avatarObj = cmd.payload ? JSON.parse(cmd.payload) : {};
           } catch {
             avatarObj = { summary: cmd.payload || "Unspecified" };
@@ -685,7 +677,7 @@ app.post("/chat", async (req, res) => {
     // If STOP was sent, draft immediately with current info
     const finalMessage = cmd?.type === "STOP" ? "Draft now using current context. No clarifiers." : message;
 
-    // Fetch voice again in case passive learner updated quickly
+    // Fetch voice again if needed
     voice = voice || await getVoice(email);
 
     const reply = await processMessageWithContext({
@@ -700,15 +692,26 @@ app.post("/chat", async (req, res) => {
     return res.json({ reply });
 
   } catch (err) {
-    console.error("❌ Chat error:", err);
+    console.error("Chat error:", err);
     return res.status(500).json({
       error: "Asteroid strike. The world has ended. If by chance it is actually us, try again in a moment."
     });
   }
 });
 
-// ===== START SERVER =====
+// ===== START SERVER (boot-order fix: listen first, then init) =====
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-  console.log(`🚀 Server running on port ${PORT}`);
+  console.log(`Server running on port ${PORT}`);
+  // Non-blocking initialisation after the server is listening
+  ensureTables()
+    .then(() => console.log("Init complete"))
+    .catch(e => console.error("Table init error:", e.message));
+
+  // Optional quick DB ping that will not block boot
+  pool.query("SELECT 1").then(() => {
+    console.log("DB reachable");
+  }).catch(e => {
+    console.error("DB ping issue:", e.message);
+  });
 });
