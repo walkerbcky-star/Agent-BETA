@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Payment Successful</title>
+  <style>
+    body { font-family: sans-serif; padding: 2rem; text-align: center; }
+    .container { max-width: 600px; margin: auto; }
+    .success { color: #2d6a4f; font-weight: bold; }
+    .error { color: red; }
+    pre { text-align: left; background: #f4f4f4; padding: 1rem; border-radius: 8px; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>✅ Payment Successful</h1>
+    <p class="success">Your subscription is active.</p>
+    <div id="details">Loading subscription details...</div>
+  </div>
+
+  <script>
+    const params = new URLSearchParams(window.location.search);
+    const sessionId = params.get("session_id");
+
+    async function fetchStatus() {
+      try {
+        const res = await fetch("/session-status?session_id=" + sessionId);
+        const data = await res.json();
+        console.log("Session data:", data);
+
+        const detailsDiv = document.getElementById("details");
+        if (data.error) {
+          detailsDiv.innerHTML = "<p class='error'>Error: " + data.error + "</p>";
+        } else {
+          detailsDiv.innerHTML = `
+            <p><strong>Session ID:</strong> ${data.id}</p>
+            <p><strong>Customer:</strong> ${data.customer_details?.email || "N/A"}</p>
+            <p><strong>Subscription:</strong> ${data.subscription?.id || "N/A"}</p>
+            <p><strong>Status:</strong> ${data.subscription?.status || "N/A"}</p>
+          `;
+        }
+      } catch (err) {
+        document.getElementById("details").innerHTML = "<p class='error'>Error loading details</p>";
+      }
+    }
+
+    if (sessionId) {
+      fetchStatus();
+    } else {
+      document.getElementById("details").innerHTML = "<p class='error'>No session ID in URL.</p>";
+    }
+  </script>
+</body>
+</html>

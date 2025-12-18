@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Subscribe</title>
+  <style>
+    body { font-family: sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; background: #f8f9fa; }
+    .box { background: #fff; padding: 2rem; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); text-align: center; max-width: 400px; }
+    input, button { padding: 0.75rem; margin-top: 1rem; width: 100%; border-radius: 8px; border: 1px solid #ccc; }
+    button { background: #635bff; color: white; font-weight: bold; border: none; cursor: pointer; }
+    button:hover { background: #5146d6; }
+    .message { margin-top: 1rem; }
+  </style>
+</head>
+<body>
+  <div class="box">
+    <h1>Subscribe to Agent Beta</h1>
+    <p>Enter your email to check subscription status.</p>
+    <input type="email" id="emailInput" placeholder="Enter your email" required />
+    <button id="checkBtn">Check</button>
+    <div id="message" class="message"></div>
+    <button id="subscribeBtn" style="display:none;">Start Subscription</button>
+  </div>
+
+  <script>
+    const emailInput = document.getElementById("emailInput");
+    const checkBtn = document.getElementById("checkBtn");
+    const messageDiv = document.getElementById("message");
+    const subscribeBtn = document.getElementById("subscribeBtn");
+
+    checkBtn.addEventListener("click", async () => {
+      const email = emailInput.value.trim();
+      if (!email) {
+        messageDiv.textContent = "Please enter a valid email.";
+        return;
+      }
+
+      try {
+        const res = await fetch("/check-subscription?email=" + encodeURIComponent(email));
+        const data = await res.json();
+        if (data.active) {
+          messageDiv.textContent = "You already have an active subscription (ID: " + data.subscriptionId + ").";
+          subscribeBtn.style.display = "none";
+        } else {
+          messageDiv.textContent = "No active subscription found. You can start a new one.";
+          subscribeBtn.style.display = "inline-block";
+        }
+      } catch (err) {
+        messageDiv.textContent = "Error checking subscription.";
+      }
+    });
+
+    subscribeBtn.addEventListener("click", async () => {
+      try {
+        const response = await fetch("/create-checkout-session");
+        const data = await response.json();
+        if (data.url) {
+          window.location.href = data.url;
+        } else {
+          alert("Error creating checkout session");
+        }
+      } catch (err) {
+        alert("Something went wrong.");
+      }
+    });
+  </script>
+</body>
+</html>
