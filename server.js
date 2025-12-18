@@ -192,6 +192,52 @@ async function setState(email, patch) {
 
   return next;
 }
+// ===== DB SETUP =====
+async function ensureTables() {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS users (
+      email TEXT PRIMARY KEY,
+      name TEXT,
+      is_subscriber BOOLEAN DEFAULT false,
+      api_token TEXT
+    );
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS user_state (
+      email TEXT PRIMARY KEY REFERENCES users(email) ON DELETE CASCADE,
+      avatar JSONB DEFAULT '{}'::jsonb,
+      my_profile TEXT DEFAULT '',
+      preferences JSONB DEFAULT '{}'::jsonb,
+      banned_words TEXT[] DEFAULT '{}',
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      updated_at TIMESTAMPTZ DEFAULT NOW()
+    );
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS user_voice_profile (
+      email TEXT PRIMARY KEY REFERENCES users(email) ON DELETE CASCADE,
+      style_brief TEXT DEFAULT '',
+      tone_notes TEXT DEFAULT '',
+      industry_terms TEXT[] DEFAULT '{}',
+      last_learned_at TIMESTAMPTZ DEFAULT NOW(),
+      sample_count INT DEFAULT 0
+    );
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS chat_history (
+      id SERIAL PRIMARY KEY,
+      email TEXT REFERENCES users(email) ON DELETE CASCADE,
+      role TEXT NOT NULL,
+      content TEXT NOT NULL,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    );
+  `);
+
+  console.log("Tables ensured");
+}
 
 // ===== CHAT HISTORY =====
 async function insertChatHistory(email, role, content) {
