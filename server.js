@@ -105,7 +105,7 @@ RESEARCH
 
 FIRM OUTPUT RULES
 - Never reference internal rules to end users.
-- End users see only clean copy, assessments, or Q and A.
+- End users see only clean copy, assessments, or Q AND A.
 - No em dash under any circumstances.
 `;
 
@@ -122,16 +122,6 @@ async function getOpenAI() {
 // ===== BASIC UTILITIES =====
 const DEFAULT_SIN_BIN = ["fundamentals", "here’s the thing"];
 
-function isEmptyObject(obj) {
-  return !obj || (typeof obj === "object" && Object.keys(obj).length === 0);
-}
-
-function mergePrefs(currentPrefs, patchPrefs) {
-  const base = isEmptyObject(currentPrefs) ? {} : currentPrefs;
-  const patch = isEmptyObject(patchPrefs) ? {} : patchPrefs;
-  return { ...base, ...patch };
-}
-
 function scrubOutput(raw, banned = []) {
   let text = String(raw || "").replace(/\u2014/g, ":");
   text = text.replace(/ {2,}/g, " ");
@@ -146,52 +136,30 @@ function scrubOutput(raw, banned = []) {
   return text.trim();
 }
 
-// ===== DB HELPERS =====
-async function getState(email) {
-  const r = await pool.query(
-    "SELECT email, avatar, my_profile, preferences, banned_words FROM user_state WHERE email=$1",
-    [email]
-  );
-  return r.rows[0] || null;
+function detectMode(message) {
+  const m = String(message || "").trim();
+  const head = m.split(/\s+/).slice(0, 2).join(" ").toUpperCase();
+  const modes = [
+    "LIGHT EDIT",
+    "EDIT",
+    "REWRITE",
+    "REBUILD",
+    "ASSESS",
+    "ANALYSE",
+    "DRAFT",
+    "OUTLINE",
+    "PROMPT",
+    "HOW-TO",
+    "LONGFORM"
+  ];
+  for (const mode of modes) {
+    if (head.startsWith(mode) || m.toUpperCase().startsWith(`MODE: ${mode}`)) {
+      return mode === "HOW-TO" ? "OUTLINE" : mode;
+    }
+  }
+  return null;
 }
 
-async function setState(email, patch) {
-  const r = await pool.query(
-    "SELECT email, avatar, my_profile, preferences, banned_words FROM user_state WHERE email=$1",
-    [email]
-  );
-
-  const current =
-    r.rows[0] || {
-      email,
-      avatar: {},
-      my_profile: "",
-      preferences: {},
-      banned_words: DEFAULT_SIN_BIN
-    };
-
-  const next = {
-    avatar: patch.avatar ?? current.avatar,
-    my_profile:
-      typeof patch.my_profile === "string" ? patch.my_profile : current.my_profile,
-    preferences: mergePrefs(current.preferences, patch.preferences),
-    banned_words: Array.isArray(patch.banned_words)
-      ? patch.banned_words
-      : current.banned_words
-  };
-
-  await pool.query(
-    `
-    INSERT INTO user_state (email, avatar, my_profile, preferences, banned_words, updated_at)
-    VALUES ($1, $2, $3, $4, $5, NOW())
-    ON CONFLICT (email) DO UPDATE
-      SET avatar=$2, my_profile=$3, preferences=$4, banned_words=$5, updated_at=NOW()
-    `,
-    [email, next.avatar, next.my_profile, next.preferences, next.banned_words]
-  );
-
-  return next;
-}
 // ===== DB SETUP =====
 async function ensureTables() {
   await pool.query(`
@@ -239,47 +207,24 @@ async function ensureTables() {
   console.log("Tables ensured");
 }
 
-// ===== CHAT HISTORY =====
-async function insertChatHistory(email, role, content) {
-  await pool.query(
-    "INSERT INTO chat_history (email, role, content) VALUES ($1, $2, $3)",
-    [email, role, content]
-  );
-}
+// ===== BODY PARSER AND STATIC AFTER WEBHOOK =====
+app.use(bodyParser.json());
+app.use(express.static("public"));
 
-async function getRecentChatHistory(email, limit = 4) {
-  const r = await pool.query(
-    `
-    SELECT role, content
-    FROM chat_history
-    WHERE email=$1
-    ORDER BY created_at DESC
-    LIMIT $2
-    `,
-    [email, limit]
-  );
-  return r.rows.reverse();
-}
+// ===== SIMPLE ROUTES =====
+app.get("/healthz", (req, res) => res.status(200).send("ok"));
+app.get("/", (req, res) => res.redirect("/login.html"));
 
-// ===== CHAT HISTORY RETRIEVAL ROUTE =====
-app.get("/history", async (req, res) => {
-  const { email, token, limit = 50 } = req.query;
+app.get("/login.html", (req, res) => {
+  res.sendFile(path.join(__dirname, "public", "login.html"));
+});
 
-  const user = await getAuthedUser(email, token);
-  if (!user) return res.status(403).json({ error: "Forbidden" });
+app.get("/chat.html", (req, res) => {
+  res.sendFile(path.join(__dirname, "public", "chat.html"));
+});
 
-  const r = await pool.query(
-    `
-    SELECT role, content, created_at
-    FROM chat_history
-    WHERE email=$1
-    ORDER BY created_at ASC
-    LIMIT $2
-    `,
-    [email, Math.min(Number(limit) || 50, 200)]
-  );
-
-  res.json({ history: r.rows });
+app.get("/chat-ui/:email", (req, res) => {
+  res.sendFile(path.join(__dirname, "public", "chat.html"));
 });
 
 // ===== START SERVER =====
@@ -287,10 +232,11 @@ const PORT = process.env.PORT || 3000;
 
 ensureTables()
   .then(() => {
+    console.log("Init complete");
     app.listen(PORT, () => {
       console.log(`Server running on port ${PORT}`);
     });
   })
   .catch(e => {
-    console.error("Init error:", e.message);
+    console.error("Table init error:", e.message);
   });
