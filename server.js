@@ -122,43 +122,6 @@ async function getOpenAI() {
 // ===== BASIC UTILITIES =====
 const DEFAULT_SIN_BIN = ["fundamentals", "here’s the thing"];
 
-function assessBriefClarity(message) {
-  const text = String(message || "").toLowerCase();
-
-  const hasFormat =
-    /(blog|post|article|email|newsletter|website|page|about|profile|landing)/.test(text);
-
-  const hasPurpose =
-    /(sell|selling|authority|expert|opinion|thought|raise|profile|visibility|conversation|inform)/.test(text);
-
-  const hasOutcome =
-    /(buy|sign up|signup|book|call|dm|click|visit|read|think|understand)/.test(text);
-
-  if (hasFormat && hasPurpose && hasOutcome) {
-    return { clear: true };
-  }
-
-  if (!hasFormat) {
-    return {
-      clear: false,
-      question: "Talk me through what you want to write and where it’s going."
-    };
-  }
-
-  if (!hasPurpose) {
-    return {
-      clear: false,
-      question: "What’s the point of this piece?"
-    };
-  }
-
-  return {
-    clear: false,
-    question: "What do you want someone to think or do after reading it?"
-  };
-}
-
-
 function scrubOutput(raw, banned = []) {
   let text = String(raw || "").replace(/\u2014/g, ":");
   text = text.replace(/ {2,}/g, " ");
