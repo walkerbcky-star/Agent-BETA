@@ -879,13 +879,6 @@ app.post("/chat", async (req, res) => {
 
     const stopTriggered = cmd?.type === "STOP";
 
-// --- BRIEF INTERROGATION GATE ---
-const briefCheck = assessBriefClarity(strippedMessage);
-
-if (!briefCheck.clear && !stopTriggered) {
-  await insertChatHistory(email, "assistant", briefCheck.question);
-  return res.json({ reply: briefCheck.question });
-}
 
     const finalMessage = stopTriggered
       ? "Draft now using current context. No clarifiers."
