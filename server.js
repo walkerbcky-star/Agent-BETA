@@ -208,6 +208,193 @@ function buildMessages({ message, systemPrompt, history = [] }) {
   ];
 }
 
+// ===== PREFLIGHT (BRIEF STABILISER) =====
+// Paste this whole block directly AFTER buildMessages() and BEFORE "// ===== RESEARCH HELPERS ====="
+
+const PREFLIGHT_KEY = "_preflight";
+
+// Heuristic: user is signalling a task, but hasn't given enough to draft.
+function isUnclearBrief(message) {
+  const m = String(message || "").trim();
+  if (!m) return true;
+
+  // If they've pasted real material, it's probably clear enough to proceed.
+  if (m.length >= 220) return false;
+  if ((m.match(/\r?\n/g) || []).length >= 2) return false;
+
+  // If they've provided a URL, we can proceed into research flow.
+  if (/https?:\/\/\S+/i.test(m)) return false;
+
+  // Strong task intent markers with low detail often means "unclear brief".
+  const intent = /\b(write|draft|rewrite|rework|create|make|fix|improve|help|need|want)\b/i.test(m);
+
+  // Platform/context markers reduce ambiguity.
+  const context = /\b(linkedin|newsletter|substack|blog|article|website|landing page|home page|about page|email|dm|pitch|bio)\b/i.test(m);
+
+  // If it’s intent-heavy but context-light and short, treat as unclear.
+  return intent && !context && m.length < 140;
+}
+
+function normaliseYesNo(text) {
+  const t = String(text || "").trim().toLowerCase();
+
+  const yes = [
+    "yes",
+    "yeah",
+    "yep",
+    "yup",
+    "right",
+    "correct",
+    "spot on",
+    "exactly",
+    "nailed it",
+    "that’s it",
+    "that's it",
+    "sounds right",
+    "pretty much",
+    "mostly",
+    "more or less",
+    "close enough"
+  ];
+
+  const no = [
+    "no",
+    "nah",
+    "nope",
+    "not really",
+    "not quite",
+    "not exactly",
+    "off",
+    "wrong",
+    "actually",
+    "sort of",
+    "kind of",
+    "but",
+    "however",
+    "except",
+    "instead"
+  ];
+
+  // Simple scoring.
+  let score = 0;
+  for (const y of yes) if (t.includes(y)) score += 2;
+  for (const n of no) if (t.includes(n)) score -= 2;
+
+  if (score >= 2) return "YES";
+  if (score <= -2) return "NO";
+  return "UNKNOWN";
+}
+
+function getPreflightState(state) {
+  const prefs = state?.preferences && typeof state.preferences === "object" ? state.preferences : {};
+  const pf = prefs[PREFLIGHT_KEY] && typeof prefs[PREFLIGHT_KEY] === "object" ? prefs[PREFLIGHT_KEY] : {};
+  return {
+    pending: Boolean(pf.pending),
+    assumption: typeof pf.assumption === "string" ? pf.assumption : "",
+    createdAt: pf.createdAt || null
+  };
+}
+
+function setPreflightStatePatch(state, next) {
+  const prefs = state?.preferences && typeof state.preferences === "object" ? state.preferences : {};
+  const existing = prefs[PREFLIGHT_KEY] && typeof prefs[PREFLIGHT_KEY] === "object" ? prefs[PREFLIGHT_KEY] : {};
+  return {
+    preferences: {
+      ...prefs,
+      [PREFLIGHT_KEY]: { ...existing, ...next }
+    }
+  };
+}
+
+async function generateWorkingAssumption({ openai, systemPrompt, userMessage }) {
+  const prompt = `
+You are a UK copy agent. The user has given an unclear brief.
+Make a working assumption in ONE sentence: "So I'm getting X, aimed at Y, to do Z."
+Then ask: "Am I on the right track?"
+No other questions. No lists. No extra commentary.
+`.trim();
+
+  const completion = await openai.chat.completions.create({
+    model: process.env.OPENAI_MODEL || "gpt-4o-mini",
+    temperature: 0.3,
+    messages: [
+      { role: "system", content: systemPrompt },
+      { role: "user", content: `${prompt}\n\nUSER INPUT:\n${String(userMessage || "").slice(0, 1200)}` }
+    ]
+  });
+
+  return completion?.choices?.[0]?.message?.content?.trim() || "So I'm getting you want something written, but the brief is still loose. Am I on the right track?";
+}
+
+/**
+ * Preflight runner.
+ * Returns:
+ * - { action: "PROCEED" } to continue normal flow
+ * - { action: "SHORT_CIRCUIT", reply, statePatch } to respond now and stop
+ * - { action: "PROCEED_WITH_BRIEF", rewrittenMessage, statePatch } to proceed with a tightened brief
+ */
+async function runPreflight({
+  message,
+  user,
+  state,
+  voice,
+  buildSystemPrompt
+}) {
+  const m = String(message || "").trim();
+  const pf = getPreflightState(state);
+
+  // If a preflight is pending, interpret this message as the user's correction/confirmation.
+  if (pf.pending) {
+    const yn = normaliseYesNo(m);
+
+    // If they broadly agree, clear pending and proceed as normal with their original task.
+    if (yn === "YES") {
+      const statePatch = setPreflightStatePatch(state, { pending: false });
+      return { action: "PROCEED", statePatch };
+    }
+
+    // If they disagree or qualify, treat their reply as data and proceed with a tightened brief.
+    // We do not re-run preflight. We fold their correction into a single rewritten message.
+    const rewrittenMessage = pf.assumption
+      ? `${pf.assumption}\n\nUser correction/addition:\n${m}`
+      : m;
+
+    const statePatch = setPreflightStatePatch(state, { pending: false });
+    return { action: "PROCEED_WITH_BRIEF", rewrittenMessage, statePatch };
+  }
+
+  // No preflight pending: decide if this brief is unclear enough to stabilise.
+  if (!isUnclearBrief(m)) return { action: "PROCEED" };
+
+  const openai = await getOpenAI();
+  if (!openai) {
+    // If OpenAI is unavailable, fail safe: ask the hinge question plainly.
+    const reply = `So I'm getting you want something written, but the brief is still loose. Am I on the right track?`;
+    const statePatch = setPreflightStatePatch(state, {
+      pending: true,
+      assumption: "Working assumption: user wants something written but brief is loose.",
+      createdAt: new Date().toISOString()
+    });
+    return { action: "SHORT_CIRCUIT", reply, statePatch };
+  }
+
+  const systemPrompt = buildSystemPrompt({ user, state, voice });
+  const reply = await generateWorkingAssumption({
+    openai,
+    systemPrompt,
+    userMessage: m
+  });
+
+  const statePatch = setPreflightStatePatch(state, {
+    pending: true,
+    assumption: reply.split(/\n+/)[0] || "",
+    createdAt: new Date().toISOString()
+  });
+
+  return { action: "SHORT_CIRCUIT", reply, statePatch };
+}
+
+
 // ===== RESEARCH HELPERS =====
 
 // Fetch and strip a page for direct user URLs
@@ -718,6 +905,34 @@ app.post("/chat", async (req, res) => {
     let voice = await getVoice(email);
 
     maybeLearnFromChat(email, message);
+
+    // ===== PREFLIGHT GATE =====
+    const preflightResult = await runPreflight({
+      message,
+      user,
+      state,
+      voice,
+      buildSystemPrompt: ({ user, state, voice }) => {
+        const clientBrief = buildClientBrief(voice, state);
+        const nameLine = user?.name ? `User: ${user.name} <${user.email}>.` : "";
+        return [GLOBAL_RULES, clientBrief, nameLine].filter(Boolean).join("\n\n");
+      }
+    });
+
+    if (preflightResult?.statePatch) {
+      state = await setState(email, preflightResult.statePatch);
+    }
+
+    if (preflightResult?.action === "SHORT_CIRCUIT") {
+      const reply = preflightResult.reply;
+      await insertChatHistory(email, "assistant", reply);
+      return res.json({ reply });
+    }
+
+    if (preflightResult?.action === "PROCEED_WITH_BRIEF") {
+      // Replace the message with the tightened brief and continue
+      message = preflightResult.rewrittenMessage;
+    }
 
     const cmd = parseCommand(message);
 
