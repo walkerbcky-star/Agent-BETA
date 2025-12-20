@@ -160,6 +160,42 @@ function detectMode(message) {
   return null;
 }
 
+// ===== PURPOSE INFERENCE (BUSINESS JOB) =====
+
+function inferPrimaryPurpose(message) {
+  const m = String(message || "").toLowerCase();
+
+  // Default for small businesses unless clearly overridden
+  let purpose = "authority-building";
+
+  // Explicit selling signals
+  if (/\b(sell|selling|offer|launch|book|buy|cta|conversion|sales page)\b/.test(m)) {
+    purpose = "sell";
+  }
+
+  // Trust and credibility signals
+  if (/\b(case study|results|proof|experience|background|why me)\b/.test(m)) {
+    purpose = "build trust";
+  }
+
+  // Profile and visibility signals
+  if (/\b(thoughts on|opinion|take on|commentary|sharing|my view)\b/.test(m)) {
+    purpose = "raise profile";
+  }
+
+  // Educational framing
+  if (/\b(information piece|explainer|overview|guide|introduction|basics|did you know)\b/.test(m)) {
+    purpose = "educate";
+  }
+
+  // Neutral-only override
+  if (/\b(neutral|purely informational|no agenda|academic)\b/.test(m)) {
+    purpose = "educate";
+  }
+
+  return purpose;
+}
+
 function buildClientBrief(voiceRow, stateRow) {
   const styleBrief = voiceRow?.style_brief || "";
   const toneNotes = voiceRow?.tone_notes || "";
@@ -392,6 +428,23 @@ async function runPreflight({
   });
 
   return { action: "SHORT_CIRCUIT", reply, statePatch };
+}
+
+// ===== PROBLEM-FIRST GUARDRAIL =====
+function buildProblemGuardrail(intentBlock) {
+  if (!intentBlock) return "";
+
+  const needsProblemFirst =
+    /Business purpose:\s*(authority-building|build trust|raise profile|sell)/i.test(intentBlock) &&
+    /Stance:\s*explanatory-with-implications/i.test(intentBlock);
+
+  if (!needsProblemFirst) return "";
+
+  return `
+STRUCTURAL REQUIREMENT
+- If you imply importance, benefit, protection, or action, you must first state the problem, risk, or loss that makes it necessary.
+- Do not move to solutions, benefits, or calls to action without naming what is at stake.
+`.trim();
 }
 
 
@@ -711,16 +764,23 @@ ${researchContext}
 `.trim()
     : "";
 
-  const systemPrompt = [
-    GLOBAL_RULES,
-    clientBrief,
-    researchBlock,
-    modeBlock,
-    salesBlock,
-    nameLine
-  ]
-    .filter(Boolean)
-    .join("\n\n");
+const intentBlock =
+  String(message).match(/INTENT ASSUMPTION[\s\S]*$/)?.[0] || "";
+
+const guardrailBlock = buildProblemGuardrail(intentBlock);
+
+const systemPrompt = [
+  GLOBAL_RULES,
+  clientBrief,
+  guardrailBlock,
+  researchBlock,
+  modeBlock,
+  salesBlock,
+  nameLine
+]
+  .filter(Boolean)
+  .join("\n\n");
+
 
   const openai = await getOpenAI();
   if (!openai) return `Noted. ${message}`;
@@ -934,6 +994,25 @@ app.post("/chat", async (req, res) => {
       message = preflightResult.rewrittenMessage;
     }
 
+       // ===== INTENT LOCK (PURPOSE + CONTEXT) =====
+    const primaryPurpose = inferPrimaryPurpose(message);
+    const contextDefaults = inferContextDefaults(message);
+
+    const intentNote = `
+INTENT ASSUMPTION
+- Business purpose: ${primaryPurpose}
+- Destination: ${contextDefaults.destination}
+- Length: ${contextDefaults.length}
+- Audience awareness: ${contextDefaults.awareness}
+- Stance: ${contextDefaults.stance}
+
+Proceed on this basis unless corrected.
+`.trim();
+
+    message = `${message}\n\n${intentNote}`;
+
+
+
     const cmd = parseCommand(message);
 
     // Simple commands handled before model
@@ -1008,6 +1087,7 @@ app.post("/chat", async (req, res) => {
           break;
       }
     }
+
 
     // RESEARCH MODE:
     // - Any URLs in the message are fetched as source material.
