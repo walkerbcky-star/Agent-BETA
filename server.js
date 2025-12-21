@@ -950,6 +950,21 @@ app.get("/user-info/:email", async (req, res) => {
 app.post("/chat", async (req, res) => {
   const { email, token, message } = req.body;
 
+// ===== CHAT GREETING GUARD =====
+const raw = String(message || "").trim().toLowerCase();
+
+// Very short, non-task messages = chat, not work
+const isGreeting =
+  raw.length <= 12 &&
+  /^(hey|hi|hello|hiya|yo|morning|afternoon|evening|you there)\b/.test(raw);
+
+if (isGreeting) {
+  const reply = "Alright. What are we working on?";
+  await insertChatHistory(email, "assistant", reply);
+  return res.json({ reply });
+}
+
+
   try {
     const user = await getAuthedUser(email, token);
     if (!user) {
