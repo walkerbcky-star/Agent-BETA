@@ -968,6 +968,8 @@ app.post("/chat", async (req, res) => {
 
     maybeLearnFromChat(email, message);
 
+
+
 // ===== CHAT GREETING GUARD =====
 const raw = String(message || "").trim().toLowerCase();
 
@@ -990,6 +992,47 @@ const isVague =
   /^(don'?t know|dont know|not sure|no idea|maybe|dunno|whatever|idk|dk|help)\b/.test(raw2);
 
 if (isVague) {
+  const reply = "Want to play around in PROMPT mode?";
+  await insertChatHistory(email, "assistant", reply);
+  return res.json({ reply });
+}
+
+// ===== PROMPT MODE HANDSHAKE =====
+
+// Read prompt mode state
+const pm = getPromptModeState(state);
+
+// If we previously offered PROMPT mode, interpret this reply first
+if (pm.pending) {
+  if (isYes(message)) {
+    const statePatch = setPromptModeStatePatch(state, {
+      pending: false,
+      enabled: true
+    });
+    state = await setState(email, statePatch);
+
+    const reply = "Alright. Let’s explore.";
+    await insertChatHistory(email, "assistant", reply);
+    return res.json({ reply });
+  }
+
+  if (isNo(message)) {
+    const statePatch = setPromptModeStatePatch(state, {
+      pending: false
+    });
+    state = await setState(email, statePatch);
+    // fall through to normal flow
+  }
+}
+
+// Vague / non-task replies trigger PROMPT offer
+if (isVagueNonTaskReply(message)) {
+  const statePatch = setPromptModeStatePatch(state, {
+    pending: true,
+    enabled: false
+  });
+  state = await setState(email, statePatch);
+
   const reply = "Want to play around in PROMPT mode?";
   await insertChatHistory(email, "assistant", reply);
   return res.json({ reply });
@@ -1023,6 +1066,46 @@ if (isVague) {
       // Replace the message with the tightened brief and continue
       message = preflightResult.rewrittenMessage;
     }
+
+// ===== PROMPT MODE STATE =====
+const PROMPTMODE_KEY = "_promptmode";
+
+function getPromptModeState(state) {
+  const prefs = state?.preferences && typeof state.preferences === "object" ? state.preferences : {};
+  const pm = prefs[PROMPTMODE_KEY] && typeof prefs[PROMPTMODE_KEY] === "object" ? prefs[PROMPTMODE_KEY] : {};
+  return {
+    pending: Boolean(pm.pending),
+    enabled: Boolean(pm.enabled)
+  };
+}
+
+function setPromptModeStatePatch(state, next) {
+  const prefs = state?.preferences && typeof state.preferences === "object" ? state.preferences : {};
+  const existing = prefs[PROMPTMODE_KEY] && typeof prefs[PROMPTMODE_KEY] === "object" ? prefs[PROMPTMODE_KEY] : {};
+  return {
+    preferences: {
+      ...prefs,
+      [PROMPTMODE_KEY]: { ...existing, ...next }
+    }
+  };
+}
+
+function isVagueNonTaskReply(message) {
+  const m = String(message || "").trim().toLowerCase();
+  if (!m) return true;
+  return /^(dont know|don't know|not sure|no idea|idk|dunno|maybe|whatever|anything|nothing|help|hmm|erm|uh)$/i.test(m);
+}
+
+function isYes(message) {
+  const m = String(message || "").trim().toLowerCase();
+  return /^(yes|yeah|yep|yup|ok|okay|alright|right|go on|sure)$/i.test(m);
+}
+
+function isNo(message) {
+  const m = String(message || "").trim().toLowerCase();
+  return /^(no|nah|nope|not really|not now)$/i.test(m);
+}
+
 
        // ===== INTENT LOCK (PURPOSE + CONTEXT) =====
     const primaryPurpose = inferPrimaryPurpose(message);
