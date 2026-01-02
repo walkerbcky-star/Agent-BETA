@@ -952,7 +952,6 @@ app.post("/chat", async (req, res) => {
 
 
 
-
   try {
     const user = await getAuthedUser(email, token);
     if (!user) {
@@ -982,6 +981,20 @@ if (isGreeting) {
   await insertChatHistory(email, "assistant", reply);
   return res.json({ reply });
 }
+
+// ===== PROMPT MODE NUDGE (VAGUE / "DON'T KNOW" REPLIES) =====
+const raw2 = String(message || "").trim().toLowerCase();
+
+const isVague =
+  raw2.length <= 40 &&
+  /^(don'?t know|dont know|not sure|no idea|maybe|dunno|whatever|idk|dk|help)\b/.test(raw2);
+
+if (isVague) {
+  const reply = "Want to play around in PROMPT mode?";
+  await insertChatHistory(email, "assistant", reply);
+  return res.json({ reply });
+}
+
 
     // ===== PREFLIGHT GATE =====
     const preflightResult = await runPreflight({
