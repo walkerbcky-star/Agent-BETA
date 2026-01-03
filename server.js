@@ -970,19 +970,21 @@ app.post("/chat", async (req, res) => {
 
 
 
-// ===== CHAT GREETING GUARD =====
-const raw = String(message || "").trim().toLowerCase();
+// ===== CHAT GREETING / CASUAL GUARD =====
+const raw = String(message || "").trim();
 
-// Very short, non-task messages = chat, not work
-const isGreeting =
-  raw.length <= 12 &&
-  /^(hey|hi|hello|hiya|yo|morning|afternoon|evening|you there)\b/.test(raw);
+// Short, non-task, non-directive messages = conversation, not work
+const isCasual =
+  raw.length <= 20 &&
+  !/[?.!]/.test(raw) &&
+  !/\b(write|draft|rewrite|rework|create|make|fix|improve|need|want|help)\b/i.test(raw);
 
-if (isGreeting) {
+if (isCasual) {
   const reply = "Alright. What are we working on?";
   await insertChatHistory(email, "assistant", reply);
   return res.json({ reply });
 }
+
 
 // ===== PROMPT MODE NUDGE (VAGUE / "DON'T KNOW" REPLIES) =====
 const raw2 = String(message || "").trim().toLowerCase();
