@@ -968,11 +968,34 @@ function signalsUncertainty(message) {
 }
 
 
+// ===== PROMPT MODE STATE =====
+
+const PROMPTMODE_KEY = "_promptmode";
+
+function getPromptModeState(state) {
+  const prefs = state?.preferences && typeof state.preferences === "object" ? state.preferences : {};
+  const pm = prefs[PROMPTMODE_KEY] && typeof prefs[PROMPTMODE_KEY] === "object" ? prefs[PROMPTMODE_KEY] : {};
+  return {
+    pending: Boolean(pm.pending),
+    enabled: Boolean(pm.enabled)
+  };
+}
+
+function setPromptModeStatePatch(state, next) {
+  const prefs = state?.preferences && typeof state.preferences === "object" ? state.preferences : {};
+  const existing = prefs[PROMPTMODE_KEY] && typeof prefs[PROMPTMODE_KEY] === "object" ? prefs[PROMPTMODE_KEY] : {};
+  return {
+    preferences: {
+      ...prefs,
+      [PROMPTMODE_KEY]: { ...existing, ...next }
+    }
+  };
+}
+
+
 // ===== CHAT ROUTE (WITH RESEARCH) =====
 app.post("/chat", async (req, res) => {
   let { email, token, message } = req.body;
-
-
 
   try {
     const user = await getAuthedUser(email, token);
@@ -1006,6 +1029,7 @@ if (isCasual) {
   await insertChatHistory(email, "assistant", reply);
   return res.json({ reply });
 }
+
 
 // ===== PROMPT MODE NUDGE (UNCERTAINTY) =====
 if (signalsUncertainty(message)) {
@@ -1093,28 +1117,6 @@ if (isVagueNonTaskReply(message)) {
       message = preflightResult.rewrittenMessage;
     }
 
-// ===== PROMPT MODE STATE =====
-const PROMPTMODE_KEY = "_promptmode";
-
-function getPromptModeState(state) {
-  const prefs = state?.preferences && typeof state.preferences === "object" ? state.preferences : {};
-  const pm = prefs[PROMPTMODE_KEY] && typeof prefs[PROMPTMODE_KEY] === "object" ? prefs[PROMPTMODE_KEY] : {};
-  return {
-    pending: Boolean(pm.pending),
-    enabled: Boolean(pm.enabled)
-  };
-}
-
-function setPromptModeStatePatch(state, next) {
-  const prefs = state?.preferences && typeof state.preferences === "object" ? state.preferences : {};
-  const existing = prefs[PROMPTMODE_KEY] && typeof prefs[PROMPTMODE_KEY] === "object" ? prefs[PROMPTMODE_KEY] : {};
-  return {
-    preferences: {
-      ...prefs,
-      [PROMPTMODE_KEY]: { ...existing, ...next }
-    }
-  };
-}
 
 
        // ===== INTENT LOCK (PURPOSE + CONTEXT) =====
