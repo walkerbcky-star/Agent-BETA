@@ -1006,18 +1006,54 @@ app.post("/chat", async (req, res) => {
       });
     }
 
-    await insertChatHistory(email, "user", message);
+   if (!pm.enabled) {
+  await insertChatHistory(email, "user", message);
+}
 
     let state = await getState(email);
     let voice = await getVoice(email);
 
     maybeLearnFromChat(email, message);
 
+const pm = getPromptModeState(state);
+
+if (pm.enabled) {
+  if (/^(done|exit|stop prompt)$/i.test(message.trim())) {
+    const statePatch = setPromptModeStatePatch(state, {
+      enabled: false,
+      pending: false
+    });
+    state = await setState(email, statePatch);
+
+    const reply = "Alright. Back to work mode.";
+    await insertChatHistory(email, "assistant", reply);
+    return res.json({ reply });
+  }
+
+  const reply = message;
+  await insertChatHistory(email, "assistant", reply);
+  return res.json({ reply });
+}
+
+// ===== PROMPT MODE ACTIVE =====
+if (pm.enabled) {
+  if (/^(done|exit|stop prompt)$/i.test(message.trim())) {
+    const statePatch = setPromptModeStatePatch(state, {
+      enabled: false,
+      pending: false
+    });
+    state = await setState(email, statePatch);
+
+    return res.json({ reply: "Alright. Back to work mode." });
+  }
+
+  // PROMPT mode = echo only, no history, no analysis
+  return res.json({ reply: message });
+}
 
 
 // ===== CHAT GREETING / CASUAL GUARD =====
 const raw = String(message || "").trim();
-const pm = getPromptModeState(state);
 
 // Short, non-task, non-directive messages = conversation, not work
 const isCasual =
@@ -1033,7 +1069,7 @@ if (isCasual) {
 
 
 // ===== PROMPT MODE NUDGE (UNCERTAINTY) =====
-if (signalsUncertainty(message)) {
+if (!pm.pending && !pm.enabled && signalsUncertainty(message)) {
   const statePatch = setPromptModeStatePatch(state, {
     pending: true,
     enabled: false
@@ -1061,9 +1097,9 @@ if (pm.pending) {
     });
     state = await setState(email, statePatch);
 
-    const reply = "Alright. Let’s explore.";
-    await insertChatHistory(email, "assistant", reply);
-    return res.json({ reply });
+  const reply = "Alright. Think out loud. I won’t treat this as a brief.";
+return res.json({ reply });
+
   }
 
   if (/^(no|nah|nope|not really|not now)$/.test(m)) {
@@ -1078,32 +1114,34 @@ if (pm.pending) {
 
 
     // ===== PREFLIGHT GATE =====
-    const preflightResult = await runPreflight({
-      message,
-      user,
-      state,
-      voice,
-      buildSystemPrompt: ({ user, state, voice }) => {
-        const clientBrief = buildClientBrief(voice, state);
-        const nameLine = user?.name ? `User: ${user.name} <${user.email}>.` : "";
-        return [GLOBAL_RULES, clientBrief, nameLine].filter(Boolean).join("\n\n");
-      }
-    });
-
-    if (preflightResult?.statePatch) {
-      state = await setState(email, preflightResult.statePatch);
+   
+if (!pm.enabled) {
+  const preflightResult = await runPreflight({
+    message,
+    user,
+    state,
+    voice,
+    buildSystemPrompt: ({ user, state, voice }) => {
+      const clientBrief = buildClientBrief(voice, state);
+      const nameLine = user?.name ? `User: ${user.name} <${user.email}>.` : "";
+      return [GLOBAL_RULES, clientBrief, nameLine].filter(Boolean).join("\n\n");
     }
+  });
 
-    if (preflightResult?.action === "SHORT_CIRCUIT") {
-      const reply = preflightResult.reply;
-      await insertChatHistory(email, "assistant", reply);
-      return res.json({ reply });
-    }
+  if (preflightResult?.statePatch) {
+    state = await setState(email, preflightResult.statePatch);
+  }
 
-    if (preflightResult?.action === "PROCEED_WITH_BRIEF") {
-      // Replace the message with the tightened brief and continue
-      message = preflightResult.rewrittenMessage;
-    }
+  if (preflightResult?.action === "SHORT_CIRCUIT") {
+    const reply = preflightResult.reply;
+    await insertChatHistory(email, "assistant", reply);
+    return res.json({ reply });
+  }
+
+  if (preflightResult?.action === "PROCEED_WITH_BRIEF") {
+    message = preflightResult.rewrittenMessage;
+  }
+}
 
 
 
