@@ -955,6 +955,18 @@ function inferContextDefaults() {
   };
 }
 
+function signalsUncertainty(message) {
+  const m = String(message || "").toLowerCase();
+
+  const hedging =
+    /\b(dunno|idk|not sure|don'?t know|maybe|possibly|kind of|sort of|i think|i guess|at the moment|yet)\b/;
+
+  const task =
+    /\b(write|draft|rewrite|rework|create|make|fix|improve|need|want|help)\b/;
+
+  return hedging.test(m) && !task.test(m);
+}
+
 
 // ===== CHAT ROUTE (WITH RESEARCH) =====
 app.post("/chat", async (req, res) => {
@@ -987,27 +999,27 @@ const raw = String(message || "").trim();
 const isCasual =
   raw.length <= 20 &&
   !/[?.!]/.test(raw) &&
-  !/\b(write|draft|rewrite|rework|create|make|fix|improve|need|want|help)\b/i.test(raw) &&
-  !/^(dont know|don't know|not sure|no idea|idk|dunno|maybe|whatever|anything|nothing|help|hmm|erm|uh)$/i.test(raw);
+  !signalsUncertainty(raw) &&
+  !/\b(write|draft|rewrite|rework|create|make|fix|improve|need|want|help)\b/i.test(raw);
 if (isCasual) {
   const reply = "Alright. What are we working on?";
   await insertChatHistory(email, "assistant", reply);
   return res.json({ reply });
 }
 
+// ===== PROMPT MODE NUDGE (UNCERTAINTY) =====
+if (signalsUncertainty(message)) {
+  const statePatch = setPromptModeStatePatch(state, {
+    pending: true,
+    enabled: false
+  });
+  state = await setState(email, statePatch);
 
-// ===== PROMPT MODE NUDGE (VAGUE / "DON'T KNOW" REPLIES) =====
-const raw2 = String(message || "").trim().toLowerCase();
-
-const isVague =
-  raw2.length <= 40 &&
-  /^(don'?t know|dont know|not sure|no idea|maybe|dunno|whatever|idk|dk|help)\b/.test(raw2);
-
-if (isVague) {
   const reply = "Want to play around in PROMPT mode?";
   await insertChatHistory(email, "assistant", reply);
   return res.json({ reply });
 }
+
 
 // ===== PROMPT MODE HANDSHAKE =====
 
@@ -1100,22 +1112,6 @@ function setPromptModeStatePatch(state, next) {
       [PROMPTMODE_KEY]: { ...existing, ...next }
     }
   };
-}
-
-function isVagueNonTaskReply(message) {
-  const m = String(message || "").trim().toLowerCase();
-  if (!m) return true;
-  return /^(dont know|don't know|not sure|no idea|idk|dunno|maybe|whatever|anything|nothing|help|hmm|erm|uh)$/i.test(m);
-}
-
-function isYes(message) {
-  const m = String(message || "").trim().toLowerCase();
-  return /^(yes|yeah|yep|yup|ok|okay|alright|right|go on|sure)$/i.test(m);
-}
-
-function isNo(message) {
-  const m = String(message || "").trim().toLowerCase();
-  return /^(no|nah|nope|not really|not now)$/i.test(m);
 }
 
 
