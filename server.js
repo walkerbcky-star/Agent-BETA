@@ -987,8 +987,8 @@ const raw = String(message || "").trim();
 const isCasual =
   raw.length <= 20 &&
   !/[?.!]/.test(raw) &&
-  !/\b(write|draft|rewrite|rework|create|make|fix|improve|need|want|help)\b/i.test(raw);
-
+  !/\b(write|draft|rewrite|rework|create|make|fix|improve|need|want|help)\b/i.test(raw) &&
+  !/^(dont know|don't know|not sure|no idea|idk|dunno|maybe|whatever|anything|nothing|help|hmm|erm|uh)$/i.test(raw);
 if (isCasual) {
   const reply = "Alright. What are we working on?";
   await insertChatHistory(email, "assistant", reply);
