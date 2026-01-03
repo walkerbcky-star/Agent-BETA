@@ -946,6 +946,16 @@ app.get("/user-info/:email", async (req, res) => {
   }
 });
 
+function inferContextDefaults() {
+  return {
+    destination: "unknown",
+    length: "unspecified",
+    awareness: "unknown",
+    stance: "unspecified"
+  };
+}
+
+
 // ===== CHAT ROUTE (WITH RESEARCH) =====
 app.post("/chat", async (req, res) => {
   let { email, token, message } = req.body;
