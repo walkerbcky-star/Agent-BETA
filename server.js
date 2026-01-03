@@ -1049,7 +1049,6 @@ if (signalsUncertainty(message)) {
 // ===== PROMPT MODE HANDSHAKE =====
 
 // Read prompt mode state
-const pm = getPromptModeState(state);
 
 // If we previously offered PROMPT mode, interpret this reply first
 if (pm.pending) {
