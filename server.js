@@ -1006,146 +1006,113 @@ app.post("/chat", async (req, res) => {
       });
     }
 
-   if (!pm.enabled) {
-  await insertChatHistory(email, "user", message);
-}
-
+    // Load state first
     let state = await getState(email);
     let voice = await getVoice(email);
 
+    // Read prompt mode once, after state exists
+    const pm = getPromptModeState(state);
+
+    // PROMPT enabled: hard bypass, no history, no other logic
+    if (pm.enabled) {
+      const trimmed = String(message || "").trim();
+
+      if (/^(done|exit|stop prompt)$/i.test(trimmed)) {
+        const statePatch = setPromptModeStatePatch(state, {
+          enabled: false,
+          pending: false
+        });
+        state = await setState(email, statePatch);
+        return res.json({ reply: "Alright. Back to work mode." });
+      }
+
+      return res.json({ reply: message });
+    }
+
+    // Non-prompt only: store user message
+    await insertChatHistory(email, "user", message);
+
+    // Learn (allowed outside prompt)
     maybeLearnFromChat(email, message);
 
-const pm = getPromptModeState(state);
+    const raw = String(message || "").trim();
 
-if (pm.enabled) {
-  if (/^(done|exit|stop prompt)$/i.test(message.trim())) {
-    const statePatch = setPromptModeStatePatch(state, {
-      enabled: false,
-      pending: false
-    });
-    state = await setState(email, statePatch);
+    // PROMPT handshake must run before casual guard, so "yes" cannot be intercepted
+    if (pm.pending) {
+      const m = raw.toLowerCase();
 
-    const reply = "Alright. Back to work mode.";
-    await insertChatHistory(email, "assistant", reply);
-    return res.json({ reply });
-  }
+      if (/^(yes|yeah|yep|yup|ok|okay|alright|sure|go on)$/.test(m)) {
+        const statePatch = setPromptModeStatePatch(state, {
+          pending: false,
+          enabled: true
+        });
+        state = await setState(email, statePatch);
 
-  const reply = message;
-  await insertChatHistory(email, "assistant", reply);
-  return res.json({ reply });
-}
+        return res.json({ reply: "Alright. Think out loud. I won’t treat this as a brief." });
+      }
 
-// ===== PROMPT MODE ACTIVE =====
-if (pm.enabled) {
-  if (/^(done|exit|stop prompt)$/i.test(message.trim())) {
-    const statePatch = setPromptModeStatePatch(state, {
-      enabled: false,
-      pending: false
-    });
-    state = await setState(email, statePatch);
+      if (/^(no|nah|nope|not really|not now)$/.test(m)) {
+        const statePatch = setPromptModeStatePatch(state, { pending: false });
+        state = await setState(email, statePatch);
+        // fall through
+      }
+    }
 
-    return res.json({ reply: "Alright. Back to work mode." });
-  }
+    // PROMPT nudge (uncertainty) stays, but only when not pending/enabled
+    if (!pm.pending && !pm.enabled && signalsUncertainty(message)) {
+      const statePatch = setPromptModeStatePatch(state, {
+        pending: true,
+        enabled: false
+      });
+      state = await setState(email, statePatch);
 
-  // PROMPT mode = echo only, no history, no analysis
-  return res.json({ reply: message });
-}
+      const reply = "Want to play around in PROMPT mode?";
+      await insertChatHistory(email, "assistant", reply);
+      return res.json({ reply });
+    }
 
+    // Casual guard (only after handshake and nudge)
+    const isCasual =
+      raw.length <= 20 &&
+      !/[?.!]/.test(raw) &&
+      !signalsUncertainty(raw) &&
+      !/\b(write|draft|rewrite|rework|create|make|fix|improve|need|want|help)\b/i.test(raw);
 
-// ===== CHAT GREETING / CASUAL GUARD =====
-const raw = String(message || "").trim();
-
-// Short, non-task, non-directive messages = conversation, not work
-const isCasual =
-  raw.length <= 20 &&
-  !/[?.!]/.test(raw) &&
-  !signalsUncertainty(raw) &&
-  !/\b(write|draft|rewrite|rework|create|make|fix|improve|need|want|help)\b/i.test(raw);
-if (isCasual) {
-  const reply = "Alright. What are we working on?";
-  await insertChatHistory(email, "assistant", reply);
-  return res.json({ reply });
-}
-
-
-// ===== PROMPT MODE NUDGE (UNCERTAINTY) =====
-if (!pm.pending && !pm.enabled && signalsUncertainty(message)) {
-  const statePatch = setPromptModeStatePatch(state, {
-    pending: true,
-    enabled: false
-  });
-  state = await setState(email, statePatch);
-
-  const reply = "Want to play around in PROMPT mode?";
-  await insertChatHistory(email, "assistant", reply);
-  return res.json({ reply });
-}
-
-
-// ===== PROMPT MODE HANDSHAKE =====
-
-// Read prompt mode state
-
-// If we previously offered PROMPT mode, interpret this reply first
-if (pm.pending) {
-  const m = String(message || "").trim().toLowerCase();
-
-  if (/^(yes|yeah|yep|yup|ok|okay|alright|sure|go on)$/.test(m)) {
-    const statePatch = setPromptModeStatePatch(state, {
-      pending: false,
-      enabled: true
-    });
-    state = await setState(email, statePatch);
-
-  const reply = "Alright. Think out loud. I won’t treat this as a brief.";
-return res.json({ reply });
-
-  }
-
-  if (/^(no|nah|nope|not really|not now)$/.test(m)) {
-    const statePatch = setPromptModeStatePatch(state, {
-      pending: false
-    });
-    state = await setState(email, statePatch);
-    // fall through
-  }
-}
-
-
+    if (isCasual) {
+      const reply = "Alright. What are we working on?";
+      await insertChatHistory(email, "assistant", reply);
+      return res.json({ reply });
+    }
 
     // ===== PREFLIGHT GATE =====
-   
-if (!pm.enabled) {
-  const preflightResult = await runPreflight({
-    message,
-    user,
-    state,
-    voice,
-    buildSystemPrompt: ({ user, state, voice }) => {
-      const clientBrief = buildClientBrief(voice, state);
-      const nameLine = user?.name ? `User: ${user.name} <${user.email}>.` : "";
-      return [GLOBAL_RULES, clientBrief, nameLine].filter(Boolean).join("\n\n");
+    // PROMPT mode can never reach here (enabled returns above)
+    const preflightResult = await runPreflight({
+      message,
+      user,
+      state,
+      voice,
+      buildSystemPrompt: ({ user, state, voice }) => {
+        const clientBrief = buildClientBrief(voice, state);
+        const nameLine = user?.name ? `User: ${user.name} <${user.email}>.` : "";
+        return [GLOBAL_RULES, clientBrief, nameLine].filter(Boolean).join("\n\n");
+      }
+    });
+
+    if (preflightResult?.statePatch) {
+      state = await setState(email, preflightResult.statePatch);
     }
-  });
 
-  if (preflightResult?.statePatch) {
-    state = await setState(email, preflightResult.statePatch);
-  }
+    if (preflightResult?.action === "SHORT_CIRCUIT") {
+      const reply = preflightResult.reply;
+      await insertChatHistory(email, "assistant", reply);
+      return res.json({ reply });
+    }
 
-  if (preflightResult?.action === "SHORT_CIRCUIT") {
-    const reply = preflightResult.reply;
-    await insertChatHistory(email, "assistant", reply);
-    return res.json({ reply });
-  }
+    if (preflightResult?.action === "PROCEED_WITH_BRIEF") {
+      message = preflightResult.rewrittenMessage;
+    }
 
-  if (preflightResult?.action === "PROCEED_WITH_BRIEF") {
-    message = preflightResult.rewrittenMessage;
-  }
-}
-
-
-
-       // ===== INTENT LOCK (PURPOSE + CONTEXT) =====
+    // ===== INTENT LOCK (PURPOSE + CONTEXT) =====
     const primaryPurpose = inferPrimaryPurpose(message);
     const contextDefaults = inferContextDefaults(message);
 
@@ -1161,8 +1128,6 @@ Proceed on this basis unless corrected.
 `.trim();
 
     message = `${message}\n\n${intentNote}`;
-
-
 
     const cmd = parseCommand(message);
 
@@ -1239,10 +1204,7 @@ Proceed on this basis unless corrected.
       }
     }
 
-
-    // RESEARCH MODE:
-    // - Any URLs in the message are fetched as source material.
-    // - A first line starting "RESEARCH:" will trigger web search for that query.
+    // ===== RESEARCH MODE (preserved) =====
     let researchContext = "";
 
     const urlMatches = String(message).match(/https?:\/\/\S+/g) || [];
@@ -1259,6 +1221,7 @@ Proceed on this basis unless corrected.
     const lines = String(message).split(/\r?\n/);
     const firstLine = lines[0] || "";
     let strippedMessage = message;
+
     const researchMatch = firstLine.match(/^RESEARCH:\s*(.+)$/i);
     if (researchMatch) {
       const q = researchMatch[1].trim();
@@ -1278,17 +1241,13 @@ Proceed on this basis unless corrected.
 
     if (urlSnippets.length) {
       const block = urlSnippets.join("\n\n");
-      researchContext = researchContext
-        ? `${researchContext}\n\n${block}`
-        : block;
+      researchContext = researchContext ? `${researchContext}\n\n${block}` : block;
     }
 
     const mode = detectMode(strippedMessage);
     const noSales = mode === "OUTLINE";
 
     const stopTriggered = cmd?.type === "STOP";
-
-
     const finalMessage = stopTriggered
       ? "Draft now using current context. No clarifiers."
       : strippedMessage;
@@ -1317,6 +1276,7 @@ Proceed on this basis unless corrected.
     });
   }
 });
+
 
 // ===== START SERVER: ENSURE TABLES, THEN LISTEN =====
 const PORT = process.env.PORT || 3000;
