@@ -1028,7 +1028,9 @@ const pm = getPromptModeState(state);
 
 // If we previously offered PROMPT mode, interpret this reply first
 if (pm.pending) {
-  if (isYes(message)) {
+  const m = String(message || "").trim().toLowerCase();
+
+  if (/^(yes|yeah|yep|yup|ok|okay|alright|sure|go on)$/.test(m)) {
     const statePatch = setPromptModeStatePatch(state, {
       pending: false,
       enabled: true
@@ -1040,12 +1042,12 @@ if (pm.pending) {
     return res.json({ reply });
   }
 
-  if (isNo(message)) {
+  if (/^(no|nah|nope|not really|not now)$/.test(m)) {
     const statePatch = setPromptModeStatePatch(state, {
       pending: false
     });
     state = await setState(email, statePatch);
-    // fall through to normal flow
+    // fall through
   }
 }
 
