@@ -1017,6 +1017,7 @@ app.post("/chat", async (req, res) => {
 
 // ===== CHAT GREETING / CASUAL GUARD =====
 const raw = String(message || "").trim();
+const pm = getPromptModeState(state);
 
 // Short, non-task, non-directive messages = conversation, not work
 const isCasual =
@@ -1075,18 +1076,6 @@ if (pm.pending) {
   }
 }
 
-// Vague / non-task replies trigger PROMPT offer
-if (isVagueNonTaskReply(message)) {
-  const statePatch = setPromptModeStatePatch(state, {
-    pending: true,
-    enabled: false
-  });
-  state = await setState(email, statePatch);
-
-  const reply = "Want to play around in PROMPT mode?";
-  await insertChatHistory(email, "assistant", reply);
-  return res.json({ reply });
-}
 
 
     // ===== PREFLIGHT GATE =====
