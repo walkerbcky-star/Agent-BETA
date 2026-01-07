@@ -1013,17 +1013,25 @@ app.post("/chat", async (req, res) => {
     // Read prompt mode once, after state exists
     const pm = getPromptModeState(state);
 
-// ===== AUTHORITY GATE: UNCERTAINTY → PROMPT =====
+// ===== AUTHORITY GATE: FIRST HEDGE =====
 if (signalsUncertainty(message) && !pm.pending && !pm.enabled) {
-  const reply = "Want to play around in PROMPT mode?";
+  return res.json({ reply: "Alright. What are we working on?" });
+}
+
+// ===== PROMPT OFFER: SECOND HEDGE =====
+if (
+  signalsUncertainty(message) &&
+  !pm.pending &&
+  !pm.enabled
+) {
   const statePatch = setPromptModeStatePatch(state, {
     pending: true,
     enabled: false
   });
   state = await setState(email, statePatch);
-  return res.json({ reply });
-}
 
+  return res.json({ reply: "Want to play around in PROMPT mode?" });
+}
 
 // ===== PROMPT HANDSHAKE (PENDING) =====
 if (pm.pending && !pm.enabled) {
@@ -1089,15 +1097,15 @@ if (pm.enabled) {
 
     const raw = String(message || "").trim();
 
+
 // ===== WORK COMMITMENT GATE =====
 const hasTaskIntent =
   /\b(write|draft|rewrite|rework|create|make|fix|improve|need|want|help)\b/i.test(raw);
 
 if (!hasTaskIntent) {
-  const reply = "Alright. What are we working on?";
-  await insertChatHistory(email, "assistant", reply);
-  return res.json({ reply });
+  return res.json({ reply: "Alright. What are we working on?" });
 }
+
 
 
     // ===== PREFLIGHT GATE =====
