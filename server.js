@@ -1107,7 +1107,6 @@ if (!hasTaskIntent) {
 }
 
 
-
     // ===== PREFLIGHT GATE =====
     // PROMPT mode can never reach here (enabled returns above)
     const preflightResult = await runPreflight({
