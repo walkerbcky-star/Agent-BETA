@@ -1013,21 +1013,47 @@ app.post("/chat", async (req, res) => {
     // Read prompt mode once, after state exists
     const pm = getPromptModeState(state);
 
-    // PROMPT enabled: hard bypass, no history, no other logic
-    if (pm.enabled) {
-      const trimmed = String(message || "").trim();
+    // PROMPT enabled: route to MENU, no drafting
+if (pm.enabled) {
+  const trimmed = String(message || "").trim();
 
-      if (/^(done|exit|stop prompt)$/i.test(trimmed)) {
-        const statePatch = setPromptModeStatePatch(state, {
-          enabled: false,
-          pending: false
-        });
-        state = await setState(email, statePatch);
-        return res.json({ reply: "Alright. Back to work mode." });
-      }
+  // Exit PROMPT explicitly
+  if (/^(done|exit|stop prompt)$/i.test(trimmed)) {
+    const statePatch = setPromptModeStatePatch(state, {
+      enabled: false,
+      pending: false
+    });
+    state = await setState(email, statePatch);
+    return res.json({ reply: "Alright. Back to work mode." });
+  }
 
-      return res.json({ reply: message });
-    }
+  // First interaction in PROMPT or vague input → show MENU
+  if (
+    !trimmed ||
+    signalsUncertainty(trimmed) ||
+    !/\b(write|draft|rewrite|rework|create|make|fix|improve)\b/i.test(trimmed)
+  ) {
+    const reply =
+      "Let’s figure out what you want to work on.\n" +
+      "- Website about page tune up\n" +
+      "- LinkedIn profile rewrite for clarity\n" +
+      "- Service page sharpen for conversions\n" +
+      "- Landing page quick audit\n" +
+      "- Headline and CTA set\n" +
+      "Pick one, or say it your own way.";
+
+    await insertChatHistory(email, "assistant", reply);
+    return res.json({ reply });
+  }
+
+  // User has picked a direction → exit PROMPT and continue normally
+  const statePatch = setPromptModeStatePatch(state, {
+    enabled: false,
+    pending: false
+  });
+  state = await setState(email, statePatch);
+  // fall through into normal flow
+}
 
     // Non-prompt only: store user message
     await insertChatHistory(email, "user", message);
