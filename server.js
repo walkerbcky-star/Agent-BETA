@@ -1013,6 +1013,20 @@ app.post("/chat", async (req, res) => {
     // Read prompt mode once, after state exists
     const pm = getPromptModeState(state);
 
+// HARD STOP: uncertainty before any initiative
+if (signalsUncertainty(message) && !pm.pending && !pm.enabled) {
+  const statePatch = setPromptModeStatePatch(state, {
+    pending: true,
+    enabled: false
+  });
+  state = await setState(email, statePatch);
+
+  const reply = "Want to play around in PROMPT mode?";
+  await insertChatHistory(email, "assistant", reply);
+  return res.json({ reply });
+}
+
+
     // PROMPT enabled: route to MENU, no drafting
 if (pm.enabled) {
   const trimmed = String(message || "").trim();
