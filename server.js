@@ -1013,7 +1013,7 @@ app.post("/chat", async (req, res) => {
     // Read prompt mode once, after state exists
     const pm = getPromptModeState(state);
 
-// HARD STOP: uncertainty before any initiative
+// ===== AUTHORITY GATE: UNCERTAINTY → PROMPT =====
 if (signalsUncertainty(message) && !pm.pending && !pm.enabled) {
   const statePatch = setPromptModeStatePatch(state, {
     pending: true,
@@ -1022,12 +1022,33 @@ if (signalsUncertainty(message) && !pm.pending && !pm.enabled) {
   state = await setState(email, statePatch);
 
   const reply = "Want to play around in PROMPT mode?";
-  await insertChatHistory(email, "assistant", reply);
   return res.json({ reply });
 }
 
+// ===== PROMPT HANDSHAKE (PENDING) =====
+if (pm.pending && !pm.enabled) {
+  const m = String(message || "").trim().toLowerCase();
 
-    // PROMPT enabled: route to MENU, no drafting
+  if (/^(yes|yeah|yep|yup|ok|okay|alright|sure|go on)$/.test(m)) {
+    const statePatch = setPromptModeStatePatch(state, {
+      pending: false,
+      enabled: true
+    });
+    state = await setState(email, statePatch);
+    return res.json({ reply: "Alright. Think out loud. I won’t treat this as a brief." });
+  }
+
+  if (/^(no|nah|nope|not really|not now)$/.test(m)) {
+    const statePatch = setPromptModeStatePatch(state, { pending: false });
+    state = await setState(email, statePatch);
+    return res.json({ reply: "Alright. What are we working on?" });
+  }
+
+  // Still pending: wait
+  return res.json({ reply: "Say yes to explore, or no to carry on." });
+}
+
+// ===== PROMPT MODE (ENABLED) =====
 if (pm.enabled) {
   const trimmed = String(message || "").trim();
 
@@ -1041,24 +1062,19 @@ if (pm.enabled) {
     return res.json({ reply: "Alright. Back to work mode." });
   }
 
-  // First interaction in PROMPT or vague input → show MENU
-  if (
-    !trimmed ||
-    signalsUncertainty(trimmed) ||
-    !/\b(write|draft|rewrite|rework|create|make|fix|improve)\b/i.test(trimmed)
-  ) {
-    const reply =
-      "Let’s figure out what you want to work on.\n" +
-      "- Website about page tune up\n" +
-      "- LinkedIn profile rewrite for clarity\n" +
-      "- Service page sharpen for conversions\n" +
-      "- Landing page quick audit\n" +
-      "- Headline and CTA set\n" +
-      "Pick one, or say it your own way.";
+  // Always show MENU until a direction is chosen
+  const reply =
+    "Let’s figure out what you want to work on.\n" +
+    "- Website about page tune up\n" +
+    "- LinkedIn profile rewrite for clarity\n" +
+    "- Service page sharpen for conversions\n" +
+    "- Landing page quick audit\n" +
+    "- Headline and CTA set\n" +
+    "Pick one, or say it your own way.";
 
-    await insertChatHistory(email, "assistant", reply);
-    return res.json({ reply });
-  }
+  return res.json({ reply });
+}
+
 
   // User has picked a direction → exit PROMPT and continue normally
   const statePatch = setPromptModeStatePatch(state, {
@@ -1077,52 +1093,16 @@ if (pm.enabled) {
 
     const raw = String(message || "").trim();
 
-    // PROMPT handshake must run before casual guard, so "yes" cannot be intercepted
-    if (pm.pending) {
-      const m = raw.toLowerCase();
+// ===== WORK COMMITMENT GATE =====
+const hasTaskIntent =
+  /\b(write|draft|rewrite|rework|create|make|fix|improve|need|want|help)\b/i.test(raw);
 
-      if (/^(yes|yeah|yep|yup|ok|okay|alright|sure|go on)$/.test(m)) {
-        const statePatch = setPromptModeStatePatch(state, {
-          pending: false,
-          enabled: true
-        });
-        state = await setState(email, statePatch);
+if (!hasTaskIntent) {
+  const reply = "Alright. What are we working on?";
+  await insertChatHistory(email, "assistant", reply);
+  return res.json({ reply });
+}
 
-        return res.json({ reply: "Alright. Think out loud. I won’t treat this as a brief." });
-      }
-
-      if (/^(no|nah|nope|not really|not now)$/.test(m)) {
-        const statePatch = setPromptModeStatePatch(state, { pending: false });
-        state = await setState(email, statePatch);
-        // fall through
-      }
-    }
-
-    // PROMPT nudge (uncertainty) stays, but only when not pending/enabled
-    if (!pm.pending && !pm.enabled && signalsUncertainty(message)) {
-      const statePatch = setPromptModeStatePatch(state, {
-        pending: true,
-        enabled: false
-      });
-      state = await setState(email, statePatch);
-
-      const reply = "Want to play around in PROMPT mode?";
-      await insertChatHistory(email, "assistant", reply);
-      return res.json({ reply });
-    }
-
-    // Casual guard (only after handshake and nudge)
-    const isCasual =
-      raw.length <= 20 &&
-      !/[?.!]/.test(raw) &&
-      !signalsUncertainty(raw) &&
-      !/\b(write|draft|rewrite|rework|create|make|fix|improve|need|want|help)\b/i.test(raw);
-
-    if (isCasual) {
-      const reply = "Alright. What are we working on?";
-      await insertChatHistory(email, "assistant", reply);
-      return res.json({ reply });
-    }
 
     // ===== PREFLIGHT GATE =====
     // PROMPT mode can never reach here (enabled returns above)
