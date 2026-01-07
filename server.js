@@ -1075,16 +1075,6 @@ if (pm.enabled) {
   return res.json({ reply });
 }
 
-
-  // User has picked a direction → exit PROMPT and continue normally
-  const statePatch = setPromptModeStatePatch(state, {
-    enabled: false,
-    pending: false
-  });
-  state = await setState(email, statePatch);
-  // fall through into normal flow
-}
-
     // Non-prompt only: store user message
     await insertChatHistory(email, "user", message);
 
