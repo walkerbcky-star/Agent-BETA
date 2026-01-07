@@ -1015,18 +1015,24 @@ app.post("/chat", async (req, res) => {
 
 // ===== AUTHORITY GATE: UNCERTAINTY → PROMPT =====
 if (signalsUncertainty(message) && !pm.pending && !pm.enabled) {
+  const reply = "Want to play around in PROMPT mode?";
   const statePatch = setPromptModeStatePatch(state, {
     pending: true,
     enabled: false
   });
   state = await setState(email, statePatch);
-
-  const reply = "Want to play around in PROMPT mode?";
   return res.json({ reply });
 }
 
+
 // ===== PROMPT HANDSHAKE (PENDING) =====
 if (pm.pending && !pm.enabled) {
+
+  // If user is still uncertain, do not demand yes/no. Re-offer PROMPT.
+  if (signalsUncertainty(message)) {
+    return res.json({ reply: "Want to play around in PROMPT mode?" });
+  }
+
   const m = String(message || "").trim().toLowerCase();
 
   if (/^(yes|yeah|yep|yup|ok|okay|alright|sure|go on)$/.test(m)) {
@@ -1044,9 +1050,9 @@ if (pm.pending && !pm.enabled) {
     return res.json({ reply: "Alright. What are we working on?" });
   }
 
-  // Still pending: wait
   return res.json({ reply: "Say yes to explore, or no to carry on." });
 }
+
 
 // ===== PROMPT MODE (ENABLED) =====
 if (pm.enabled) {
