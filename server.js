@@ -1098,20 +1098,42 @@ if (pm.enabled) {
 // ===== IDLE MODE (POST-PROMPT DECLINE) =====
 if (pm.idle) {
   const rawIdle = String(message || "").trim();
+const upper = rawIdle.toUpperCase();
 
-  const hasTaskIntent =
-    /\b(write|draft|rewrite|rework|create|make|fix|improve|need|want|help)\b/i.test(rawIdle);
+// Explicit control interrupts idle
+const isControl =
+  upper === "PROMPT" ||
+  upper === "MENU" ||
+  upper === "MENU AGAIN";
 
+// Task intent (existing rule)
+const hasTaskIntent =
+  /\b(write|draft|rewrite|rework|create|make|fix|improve|need|want|help)\b/i.test(rawIdle);
+
+// Structural artefacts (lightweight, no new abstraction)
+const hasArtefact =
+  /\b(about page|about us|linkedin|profile|website|service page|landing page|email|bio)\b/i.test(rawIdle);
+
+// Guiding language
+const isGuiding =
+  /\b(actually|the problem is|what I’m stuck on|it’s more about|this might be|i keep thinking)\b/i.test(rawIdle);
+
+  
   // Stay idle unless a task verb appears
-  if (!hasTaskIntent) {
-    return res.json({ reply: "I’m here." });
-  }
-
-  // Task intent wakes the engine
+// Exit idle if direction appears
+if (isControl || hasArtefact || isGuiding || hasTaskIntent) {
   const statePatch = setPromptModeStatePatch(state, { idle: false });
   state = await setState(email, statePatch);
   pm = getPromptModeState(state);
+  // fall through into normal routing with the same message
+} else {
+  // Remain idle: acknowledge content and keep thread alive
+  await insertChatHistory(email, "user", message);
+  const reply = "Mm. Go on.";
+  await insertChatHistory(email, "assistant", reply);
+  return res.json({ reply });
 }
+
 
 
     // Non-prompt only: store user message
