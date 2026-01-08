@@ -1251,10 +1251,10 @@ const hasTaskIntent =
   /\b(write|draft|rewrite|rework|create|make|fix|improve|need|want|help)\b/i.test(rawTask);
 
 
-if (!hasTaskIntent) {
+if (!hasTaskIntent && !pm.pending && !pm.idle) {
   return res.json({ reply: "Alright. Say a word and we’ll shape it." });
-
 }
+
 
 
     // ===== PREFLIGHT GATE =====
