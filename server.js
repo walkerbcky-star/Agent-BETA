@@ -1011,21 +1011,16 @@ app.post("/chat", async (req, res) => {
     let voice = await getVoice(email);
 
     // Read prompt mode once, after state exists
-    const pm = getPromptModeState(state);
+    let pm = getPromptModeState(state);
 
-// ===== UNCERTAINTY ESCALATION =====
-if (signalsUncertainty(message) && !pm.enabled) {
 
-  // First hedge: no PROMPT yet
-  if (!pm.pending) {
-    const statePatch = setPromptModeStatePatch(state, { pending: true });
-    state = await setState(email, statePatch);
-    return res.json({ reply: "Alright. What are we working on?" });
-  }
-
-  // Second hedge: now offer PROMPT
-  return res.json({ reply: "Want to play around in PROMPT mode?" });
+// ===== UNCERTAINTY FLAG (NO RETURN) =====
+if (signalsUncertainty(message) && !pm.enabled && !pm.pending) {
+  const statePatch = setPromptModeStatePatch(state, { pending: true });
+  state = await setState(email, statePatch);
+  pm = getPromptModeState(state); // re-read after mutation
 }
+
 // ===== PROMPT HANDSHAKE (PENDING) =====
 if (pm.pending && !pm.enabled) {
 
