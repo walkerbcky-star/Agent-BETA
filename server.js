@@ -1107,8 +1107,9 @@ const isControl =
   upper === "MENU AGAIN";
 
 // Task intent (existing rule)
-const hasTaskIntent =
+const hasIdleTaskIntent =
   /\b(write|draft|rewrite|rework|create|make|fix|improve|need|want|help)\b/i.test(rawIdle);
+
 
 // Structural artefacts (lightweight, no new abstraction)
 const hasArtefact =
@@ -1121,7 +1122,8 @@ const isGuiding =
   
   // Stay idle unless a task verb appears
 // Exit idle if direction appears
-if (isControl || hasArtefact || isGuiding || hasTaskIntent) {
+if (isControl || hasArtefact || isGuiding || hasIdleTaskIntent) {
+
   const statePatch = setPromptModeStatePatch(state, { idle: false });
   state = await setState(email, statePatch);
   pm = getPromptModeState(state);
