@@ -1094,7 +1094,12 @@ app.post("/chat", async (req, res) => {
 
 const reflex = applyConversationalReflex({ message });
 
-if (reflex.handled && !pm.pending && !pm.enabled) {
+if (
+  reflex.handled &&
+  !pm.pending &&
+  !pm.enabled &&
+  !signalsUncertainty(message)
+) {
   await insertChatHistory(email, "assistant", reflex.reply);
   return res.json({ reply: reflex.reply });
 }
