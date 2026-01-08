@@ -975,10 +975,12 @@ const PROMPTMODE_KEY = "_promptmode";
 function getPromptModeState(state) {
   const prefs = state?.preferences && typeof state.preferences === "object" ? state.preferences : {};
   const pm = prefs[PROMPTMODE_KEY] && typeof prefs[PROMPTMODE_KEY] === "object" ? prefs[PROMPTMODE_KEY] : {};
-  return {
-    pending: Boolean(pm.pending),
-    enabled: Boolean(pm.enabled)
-  };
+ return {
+  pending: Boolean(pm.pending),
+  enabled: Boolean(pm.enabled),
+  idle: Boolean(pm.idle)
+};
+
 }
 
 function setPromptModeStatePatch(state, next) {
@@ -1013,6 +1015,19 @@ app.post("/chat", async (req, res) => {
     // Read prompt mode once, after state exists
     let pm = getPromptModeState(state);
 
+// ===== GREETING GATE (OPENER) =====
+const raw = String(message || "").trim();
+
+const isGreeting =
+  raw.length <= 30 &&
+  !signalsUncertainty(raw) &&
+  !/\b(write|draft|rewrite|rework|create|make|fix|improve|need|want|help)\b/i.test(raw) &&
+  /^(hi|hey|hiya|hello|yo|sup|hola|alright|alrighty|morning|afternoon|evening)$/i.test(raw);
+
+if (isGreeting) {
+  return res.json({ reply: "Alright. What are we up to today?" });
+}
+
 
 // ===== UNCERTAINTY FLAG (NO RETURN) =====
 if (signalsUncertainty(message) && !pm.enabled && !pm.pending) {
@@ -1041,10 +1056,13 @@ if (pm.pending && !pm.enabled) {
   }
 
   if (/^(no|nah|nope|not really|not now)$/.test(m)) {
-    const statePatch = setPromptModeStatePatch(state, { pending: false });
-    state = await setState(email, statePatch);
-    return res.json({ reply: "Alright. What are we working on?" });
-  }
+  const statePatch = setPromptModeStatePatch(state, {
+    pending: false,
+    idle: true
+  });
+  state = await setState(email, statePatch);
+  return res.json({ reply: "Ok, I’ll just keep my engine ticking over." });
+}
 
   return res.json({ reply: "Say yes to explore, or no to carry on." });
 }
@@ -1077,18 +1095,39 @@ if (pm.enabled) {
   return res.json({ reply });
 }
 
+// ===== IDLE MODE (POST-PROMPT DECLINE) =====
+if (pm.idle) {
+  const rawIdle = String(message || "").trim();
+
+  const hasTaskIntent =
+    /\b(write|draft|rewrite|rework|create|make|fix|improve|need|want|help)\b/i.test(rawIdle);
+
+  // Stay idle unless a task verb appears
+  if (!hasTaskIntent) {
+    return res.json({ reply: "I’m here." });
+  }
+
+  // Task intent wakes the engine
+  const statePatch = setPromptModeStatePatch(state, { idle: false });
+  state = await setState(email, statePatch);
+  pm = getPromptModeState(state);
+}
+
+
     // Non-prompt only: store user message
     await insertChatHistory(email, "user", message);
 
     // Learn (allowed outside prompt)
     maybeLearnFromChat(email, message);
 
-    const raw = String(message || "").trim();
+    const rawTask = String(message || "").trim();
+
 
 
 // ===== WORK COMMITMENT GATE =====
 const hasTaskIntent =
-  /\b(write|draft|rewrite|rework|create|make|fix|improve|need|want|help)\b/i.test(raw);
+  /\b(write|draft|rewrite|rework|create|make|fix|improve|need|want|help)\b/i.test(rawTask);
+
 
 if (!hasTaskIntent) {
   return res.json({ reply: "Alright. What are we working on?" });
