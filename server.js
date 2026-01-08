@@ -957,16 +957,92 @@ function inferContextDefaults() {
 
 function signalsUncertainty(message) {
   const m = String(message || "").toLowerCase();
-
-  const hedging =
-    /\b(dunno|idk|not sure|don'?t know|maybe|possibly|kind of|sort of|i think|i guess|at the moment|yet)\b/;
-
-  const task =
-    /\b(write|draft|rewrite|rework|create|make|fix|improve|need|want|help)\b/;
-
-  return hedging.test(m) && !task.test(m);
+  return /\b(dunno|idk|not sure|don'?t know|no idea|i'?m stuck|maybe)\b/.test(m);
 }
 
+function applyConversationalReflex({ message }) {
+
+  const raw = String(message || "").trim();
+  const lower = raw.toLowerCase();
+
+  // 1. Delegation
+  if (/\b(surprise me|you decide|dealer'?s choice|whatever you think)\b/i.test(lower)) {
+    return {
+      handled: true,
+      reply: "Alright. Dealer’s choice it is then. How about tightening your LinkedIn profile so it actually says what you do in ten seconds?"
+    };
+  }
+
+  // 2. Idea request
+  if (/\b(any ideas|any thoughts|got anything|what else)\b/i.test(lower)) {
+    return {
+      handled: true,
+      reply: "How about a quick clarity pass on your LinkedIn profile so it reads clean and confident instead of busy?"
+    };
+  }
+
+  // 3. Thanks / closure
+  if (/^(thanks|cheers|nice one|ta)$/i.test(lower)) {
+    return {
+      handled: true,
+      reply: "No worries."
+    };
+  }
+
+ // 4. Evaluative hesitation (thinking, not confused)
+if (/\b(hmm|maybe|possibly|i think|i guess)\b/i.test(lower)) {
+  return {
+    handled: true,
+    reply: "Alright. Sounds like a yes, but. What’s the but?"
+  };
+}
+
+
+ // 5. Partial selection (single noun cue)
+if (/\b(linkedin|about|website|email|emails)\b/i.test(lower)) {
+  if (/linkedin/i.test(lower)) {
+    return {
+      handled: true,
+      reply: "Alright. Profile, posts, or something else on LinkedIn?"
+    };
+  }
+
+  if (/about/i.test(lower)) {
+    return {
+      handled: true,
+      reply: "Okay. About page specifically, or the positioning behind it?"
+    };
+  }
+
+  if (/website/i.test(lower)) {
+    return {
+      handled: true,
+      reply: "Got it. Whole site, or one page that’s bothering you?"
+    };
+  }
+
+  if (/email/i.test(lower)) {
+    return {
+      handled: true,
+      reply: "Sure. Sales email, nurture, or something operational?"
+    };
+  }
+}
+
+
+  // 6. Meta-commentary
+  if (/\b(that doesn’t fit|this feels off|i didn’t say anything|where did that come from)\b/i.test(lower)) {
+    return {
+      handled: true,
+      reply: "Fair. That was a reach. Let’s reset. What direction do you want to go?"
+    };
+  }
+
+  return { handled: false };
+}
+
+
+  
 
 // ===== PROMPT MODE STATE =====
 
@@ -1015,6 +1091,16 @@ app.post("/chat", async (req, res) => {
     // Read prompt mode once, after state exists
     let pm = getPromptModeState(state);
 
+
+const reflex = applyConversationalReflex({ message });
+
+if (reflex.handled && !pm.pending && !pm.enabled) {
+  await insertChatHistory(email, "assistant", reflex.reply);
+  return res.json({ reply: reflex.reply });
+}
+
+
+
 // ===== GREETING GATE (OPENER) =====
 const raw = String(message || "").trim();
 
@@ -1027,7 +1113,6 @@ const isGreeting =
 if (isGreeting) {
   return res.json({ reply: "Alright. What are we up to today?" });
 }
-
 
 // ===== UNCERTAINTY FLAG (NO RETURN) =====
 if (signalsUncertainty(message) && !pm.enabled && !pm.pending) {
@@ -1095,8 +1180,14 @@ if (pm.enabled) {
   return res.json({ reply });
 }
 
+
 // ===== IDLE MODE (POST-PROMPT DECLINE) =====
-if (pm.idle) {
+if (
+  pm.idle &&
+ !reflex.handled &&
+  !/^(thanks|cheers|nice one|ta)$/i.test(String(message || "").trim())
+) {
+
   const rawIdle = String(message || "").trim();
 const upper = rawIdle.toUpperCase();
 
@@ -1154,7 +1245,8 @@ const hasTaskIntent =
 
 
 if (!hasTaskIntent) {
-  return res.json({ reply: "Alright. What are we working on?" });
+  return res.json({ reply: "Alright. Say a word and we’ll shape it." });
+
 }
 
 
