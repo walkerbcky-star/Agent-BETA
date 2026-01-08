@@ -1013,26 +1013,19 @@ app.post("/chat", async (req, res) => {
     // Read prompt mode once, after state exists
     const pm = getPromptModeState(state);
 
-// ===== AUTHORITY GATE: FIRST HEDGE =====
-if (signalsUncertainty(message) && !pm.pending && !pm.enabled) {
-  return res.json({ reply: "Alright. What are we working on?" });
-}
+// ===== UNCERTAINTY ESCALATION =====
+if (signalsUncertainty(message) && !pm.enabled) {
 
-// ===== PROMPT OFFER: SECOND HEDGE =====
-if (
-  signalsUncertainty(message) &&
-  !pm.pending &&
-  !pm.enabled
-) {
-  const statePatch = setPromptModeStatePatch(state, {
-    pending: true,
-    enabled: false
-  });
-  state = await setState(email, statePatch);
+  // First hedge: no PROMPT yet
+  if (!pm.pending) {
+    const statePatch = setPromptModeStatePatch(state, { pending: true });
+    state = await setState(email, statePatch);
+    return res.json({ reply: "Alright. What are we working on?" });
+  }
 
+  // Second hedge: now offer PROMPT
   return res.json({ reply: "Want to play around in PROMPT mode?" });
 }
-
 // ===== PROMPT HANDSHAKE (PENDING) =====
 if (pm.pending && !pm.enabled) {
 
