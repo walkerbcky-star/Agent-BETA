@@ -1115,11 +1115,13 @@ if (isGreeting) {
 }
 
 // ===== UNCERTAINTY FLAG (NO RETURN) =====
+
 if (signalsUncertainty(message) && !pm.enabled && !pm.pending) {
   const statePatch = setPromptModeStatePatch(state, { pending: true });
   state = await setState(email, statePatch);
-  pm = getPromptModeState(state); // re-read after mutation
+  return res.json({ reply: "Want to play around in PROMPT mode?" });
 }
+
 
 // ===== PROMPT HANDSHAKE (PENDING) =====
 if (pm.pending && !pm.enabled) {
