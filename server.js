@@ -497,6 +497,7 @@ async function webSearch(query) {
 }
 
 // ===== VOICE ANALYSIS =====
+
 async function summariseClientVoice(texts) {
   const openai = await getOpenAI();
   if (!openai) return { style_brief: "", tone_notes: "" };
@@ -560,6 +561,7 @@ async function maybeLearnFromChat(email, userMessage) {
 }
 
 // ===== DB SETUP =====
+
 async function ensureTables() {
   await pool.query(`
     CREATE TABLE IF NOT EXISTS users (
@@ -607,6 +609,7 @@ async function ensureTables() {
 }
 
 // ===== AUTH + STATE HELPERS =====
+
 async function getAuthedUser(email, token) {
   const r = await pool.query(
     "SELECT email, name, is_subscriber, api_token FROM users WHERE email=$1",
@@ -694,6 +697,7 @@ async function getRecentChatHistory(email, limit = 4) {
 }
 
 // ===== COMMAND PARSER =====
+
 function parseCommand(raw) {
   const msg = String(raw || "").trim();
   const exact = msg.toUpperCase();
@@ -727,6 +731,7 @@ function parseCommand(raw) {
 }
 
 // ===== MESSAGE PROCESSOR WITH RESEARCH =====
+
 async function processMessageWithContext({
   message,
   user,
@@ -798,6 +803,7 @@ const systemPrompt = [
 }
 
 // ===== STRIPE WEBHOOK =====
+
 app.post("/stripe/webhook", async (req, res) => {
   let event;
   try {
@@ -859,6 +865,7 @@ app.post("/stripe/webhook", async (req, res) => {
 });
 
 // ===== BODY PARSER AND STATIC AFTER WEBHOOK =====
+
 app.use(bodyParser.json());
 app.use(express.static("public"));
 
@@ -877,6 +884,7 @@ app.get("/chat-ui/:email", (req, res) => {
 });
 
 // ===== STRIPE CHECKOUT =====
+
 app.post("/create-checkout-session", async (req, res) => {
   try {
     console.log("Using BASE_URL:", process.env.BASE_URL);
@@ -897,6 +905,7 @@ app.post("/create-checkout-session", async (req, res) => {
 });
 
 // ===== POST-CHECKOUT =====
+
 app.get("/post-checkout", async (req, res) => {
   const { session_id } = req.query;
   try {
@@ -929,6 +938,7 @@ app.get("/post-checkout", async (req, res) => {
 });
 
 // ===== USER INFO =====
+
 app.get("/user-info/:email", async (req, res) => {
   const { email } = req.params;
   try {
@@ -1072,6 +1082,7 @@ function setPromptModeStatePatch(state, next) {
 
 
 // ===== CHAT ROUTE (WITH RESEARCH) =====
+
 app.post("/chat", async (req, res) => {
   let { email, token, message } = req.body;
 
@@ -1105,8 +1116,8 @@ if (
 }
 
 
-
 // ===== GREETING GATE (OPENER) =====
+
 const raw = String(message || "").trim();
 
 const isGreeting =
@@ -1116,8 +1127,17 @@ const isGreeting =
   /^(hi|hey|hiya|hello|yo|sup|hola|alright|alrighty|morning|afternoon|evening)$/i.test(raw);
 
 if (isGreeting) {
+  // hard reset prompt mode on greeting
+  const statePatch = setPromptModeStatePatch(state, {
+    enabled: false,
+    pending: false,
+    idle: false
+  });
+  await setState(email, statePatch);
+
   return res.json({ reply: "Alright. What are we up to today?" });
 }
+
 
 // ===== UNCERTAINTY FLAG (NO RETURN) =====
 
@@ -1129,6 +1149,7 @@ if (signalsUncertainty(message) && !pm.enabled && !pm.pending) {
 
 
 // ===== PROMPT HANDSHAKE (PENDING) =====
+
 if (pm.pending && !pm.enabled) {
 
   // If user is still uncertain, do not demand yes/no. Re-offer PROMPT.
@@ -1161,20 +1182,21 @@ if (pm.pending && !pm.enabled) {
 
 
 // ===== PROMPT MODE (ENABLED) =====
-if (pm.enabled) {
-  const trimmed = String(message || "").trim();
 
-  // Exit PROMPT explicitly
-  if (/^(done|exit|stop prompt)$/i.test(trimmed)) {
+if (pm.enabled) {
+  const trimmed = String(message || "").trim().toLowerCase();
+
+  // Exit PROMPT explicitly OR by refusal
+  if (/^(done|exit|stop prompt|no|nah|nope|not now)$/i.test(trimmed)) {
     const statePatch = setPromptModeStatePatch(state, {
       enabled: false,
-      pending: false
+      pending: false,
+      idle: false
     });
-    state = await setState(email, statePatch);
+    await setState(email, statePatch);
     return res.json({ reply: "Alright. Back to work mode." });
   }
 
-  // Always show MENU until a direction is chosen
   const reply =
     "Let’s figure out what you want to work on.\n" +
     "- Website about page tune up\n" +
@@ -1188,9 +1210,10 @@ if (pm.enabled) {
 }
 
 
+
 // ===== IDLE MODE (POST-PROMPT DECLINE) =====
-if (
-  pm.idle &&
+
+if (pm.idle &&
  !reflex.handled &&
   !/^(thanks|cheers|nice one|ta)$/i.test(String(message || "").trim())
 ) {
