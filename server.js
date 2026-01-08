@@ -1135,7 +1135,7 @@ if (isControl || hasArtefact || isGuiding || hasIdleTaskIntent) {
   await insertChatHistory(email, "assistant", reply);
   return res.json({ reply });
 }
-
+}
 
 
     // Non-prompt only: store user message
