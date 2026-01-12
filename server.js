@@ -1078,6 +1078,54 @@ function setPromptModeStatePatch(state, next) {
       [PROMPTMODE_KEY]: { ...existing, ...next }
     }
   };
+
+// ===== TASK CONTEXT (SHORT-TERM INTENT MEMORY) =====
+
+const TASKCTX_KEY = "_taskctx";
+
+function getTaskContext(state) {
+  const prefs = state?.preferences && typeof state.preferences === "object" ? state.preferences : {};
+  const ctx = prefs[TASKCTX_KEY] && typeof prefs[TASKCTX_KEY] === "object" ? prefs[TASKCTX_KEY] : {};
+  return {
+    platform: ctx.platform || null,
+    format: ctx.format || null,
+    goal: ctx.goal || null
+  };
+}
+
+function setTaskContextPatch(state, patch) {
+  const prefs = state?.preferences && typeof state.preferences === "object" ? state.preferences : {};
+  const existing = prefs[TASKCTX_KEY] && typeof prefs[TASKCTX_KEY] === "object" ? prefs[TASKCTX_KEY] : {};
+  return {
+    preferences: {
+      ...prefs,
+      [TASKCTX_KEY]: { ...existing, ...patch }
+    }
+  };
+}
+
+function extractTaskCues(message) {
+  const m = String(message || "").toLowerCase();
+
+  const ctx = {};
+
+  if (/\blinkedin\b/.test(m)) ctx.platform = "linkedin";
+  if (/\b(newsletter|substack)\b/.test(m)) ctx.platform = "newsletter";
+  if (/\bwebsite|site\b/.test(m)) ctx.platform = "website";
+  if (/\bemail\b/.test(m)) ctx.platform = "email";
+
+  if (/\bpost\b/.test(m)) ctx.format = "post";
+  if (/\bprofile\b/.test(m)) ctx.format = "profile";
+  if (/\bpage\b/.test(m)) ctx.format = "page";
+  if (/\bthread\b/.test(m)) ctx.format = "thread";
+
+  if (/\bauthority\b/.test(m)) ctx.goal = "authority-building";
+  if (/\bsell|sales|conversion\b/.test(m)) ctx.goal = "sell";
+  if (/\btrust\b/.test(m)) ctx.goal = "build-trust";
+
+  return ctx;
+}
+
 }
 
 
@@ -1101,6 +1149,15 @@ app.post("/chat", async (req, res) => {
 
     // Read prompt mode once, after state exists
     let pm = getPromptModeState(state);
+
+// Update short-term task context from user message
+const existingCtx = getTaskContext(state);
+const newCues = extractTaskCues(message);
+
+if (Object.keys(newCues).length) {
+  const statePatch = setTaskContextPatch(state, newCues);
+  state = await setState(email, statePatch);
+}
 
 
 const reflex = applyConversationalReflex({ message });
@@ -1258,12 +1315,22 @@ if (
     state = await setState(email, statePatch);
     pm = getPromptModeState(state);
     // fall through into normal routing
-  } else {
-    await insertChatHistory(email, "user", message);
-    const reply = "Mm. Go on.";
+ } else {
+  const ctx = getTaskContext(state);
+
+  // If we already know enough, move forward instead of stalling
+  if (ctx.platform && ctx.format) {
+    const reply = `Alright. ${ctx.goal ? ctx.goal + " " : ""}${ctx.platform} ${ctx.format}. What angle do you want to take?`;
     await insertChatHistory(email, "assistant", reply);
     return res.json({ reply });
   }
+
+  await insertChatHistory(email, "user", message);
+  const reply = "Mm. Go on.";
+  await insertChatHistory(email, "assistant", reply);
+  return res.json({ reply });
+}
+
 }
 
 
