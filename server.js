@@ -1213,50 +1213,59 @@ if (pm.enabled) {
 
 // ===== IDLE MODE (POST-PROMPT DECLINE) =====
 
-if (pm.idle &&
- !reflex.handled &&
+if (
+  pm.idle &&
+  !reflex.handled &&
   !/^(thanks|cheers|nice one|ta)$/i.test(String(message || "").trim())
 ) {
 
   const rawIdle = String(message || "").trim();
-const upper = rawIdle.toUpperCase();
+  const upper = rawIdle.toUpperCase();
 
-// Explicit control interrupts idle
-const isControl =
-  upper === "PROMPT" ||
-  upper === "MENU" ||
-  upper === "MENU AGAIN";
+  // PROMPT always overrides idle
+  if (upper === "PROMPT") {
+    const statePatch = setPromptModeStatePatch(state, {
+      idle: false,
+      pending: true,
+      enabled: false
+    });
+    await setState(email, statePatch);
+    return res.json({ reply: "Want to play around in PROMPT mode?" });
+  }
 
-// Task intent (existing rule)
-const hasIdleTaskIntent =
-  /\b(write|draft|rewrite|rework|create|make|fix|improve|need|want|help)\b/i.test(rawIdle);
+  // MENU always overrides idle
+  if (upper === "MENU" || upper === "MENU AGAIN") {
+    const statePatch = setPromptModeStatePatch(state, { idle: false });
+    state = await setState(email, statePatch);
+    pm = getPromptModeState(state);
+    // fall through into normal routing
+  }
 
+  // Task intent (existing rule)
+  const hasIdleTaskIntent =
+    /\b(write|draft|rewrite|rework|create|make|fix|improve|need|want|help)\b/i.test(rawIdle);
 
-// Structural artefacts (lightweight, no new abstraction)
-const hasArtefact =
-  /\b(about page|about us|linkedin|profile|website|service page|landing page|email|bio)\b/i.test(rawIdle);
+  // Structural artefacts
+  const hasArtefact =
+    /\b(about page|about us|linkedin|profile|website|service page|landing page|email|bio)\b/i.test(rawIdle);
 
-// Guiding language
-const isGuiding =
-  /\b(actually|the problem is|what I’m stuck on|it’s more about|this might be|i keep thinking)\b/i.test(rawIdle);
+  // Guiding language
+  const isGuiding =
+    /\b(actually|the problem is|what I’m stuck on|it’s more about|this might be|i keep thinking)\b/i.test(rawIdle);
 
-  
-  // Stay idle unless a task verb appears
-// Exit idle if direction appears
-if (isControl || hasArtefact || isGuiding || hasIdleTaskIntent) {
-
-  const statePatch = setPromptModeStatePatch(state, { idle: false });
-  state = await setState(email, statePatch);
-  pm = getPromptModeState(state);
-  // fall through into normal routing with the same message
-} else {
-  // Remain idle: acknowledge content and keep thread alive
-  await insertChatHistory(email, "user", message);
-  const reply = "Mm. Go on.";
-  await insertChatHistory(email, "assistant", reply);
-  return res.json({ reply });
+  if (hasArtefact || isGuiding || hasIdleTaskIntent) {
+    const statePatch = setPromptModeStatePatch(state, { idle: false });
+    state = await setState(email, statePatch);
+    pm = getPromptModeState(state);
+    // fall through into normal routing
+  } else {
+    await insertChatHistory(email, "user", message);
+    const reply = "Mm. Go on.";
+    await insertChatHistory(email, "assistant", reply);
+    return res.json({ reply });
+  }
 }
-}
+
 
 
     // Non-prompt only: store user message
